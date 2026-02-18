@@ -7,15 +7,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
+# Copy pyproject files
 COPY pyproject.toml ./
 COPY services/gateway/pyproject.toml ./services/gateway/
-RUN pip install --no-cache-dir -e . && \
-    pip install --no-cache-dir -e ./services/gateway
 
-# Copy application code
+# Copy source code FIRST (required for editable install)
 COPY shared/ /app/shared/
 COPY services/gateway/src/gateway/ /app/gateway/
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -e . && \
+    pip install --no-cache-dir -e ./services/gateway
 
 # Set Python path
 ENV PYTHONPATH=/app:/app/shared
