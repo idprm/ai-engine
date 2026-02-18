@@ -11,16 +11,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY pyproject.toml ./
 COPY services/gateway/pyproject.toml ./services/gateway/
 
-# Copy source code FIRST (required for editable install)
+# Copy source code (in correct locations for editable install)
+# Root package expects shared/ at /app/shared/
 COPY shared/ /app/shared/
-COPY services/gateway/src/gateway/ /app/gateway/
+# Gateway package expects gateway/ at /app/services/gateway/gateway/
+COPY services/gateway/src/gateway/ /app/services/gateway/gateway/
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -e . && \
     pip install --no-cache-dir -e ./services/gateway
 
 # Set Python path
-ENV PYTHONPATH=/app:/app/shared
+ENV PYTHONPATH=/app:/app/shared:/app/services/gateway
 ENV PYTHONUNBUFFERED=1
 
 # Expose port
