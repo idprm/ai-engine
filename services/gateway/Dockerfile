@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY pyproject.toml ./
 COPY services/gateway/pyproject.toml ./services/gateway/
 RUN pip install --no-cache-dir -e . && \
-    pip install --no-cache_dir -e ./services/gateway
+    pip install --no-cache-dir -e ./services/gateway
 
 # Copy application code
 COPY shared/ /app/shared/
