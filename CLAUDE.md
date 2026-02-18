@@ -293,9 +293,6 @@ GitHub Actions workflow at `.github/workflows/docker.yml`:
 - `v1.0.0`, `v1.0` — Semantic version tags
 - `pr-<number>` — Pull request builds (not pushed)
 
-### Security Scanning
-Trivy scans for CRITICAL/HIGH vulnerabilities; results uploaded to GitHub Security tab.
-
 ### Required GitHub Secrets
 - `DOCKER_USERNAME` — Docker Hub username
 - `DOCKER_PASSWORD` — Docker Hub access token (not password)

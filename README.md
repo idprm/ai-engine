@@ -304,7 +304,6 @@ The CI/CD pipeline (`.github/workflows/docker.yml`) automatically:
 
 1. **Builds** Docker images for both services on every push/PR
 2. **Pushes** images to Docker Hub on `main`/`master` branch
-3. **Scans** images for vulnerabilities with Trivy
 
 ### Image Tags
 
