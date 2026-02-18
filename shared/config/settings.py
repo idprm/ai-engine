@@ -56,3 +56,6 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Get cached settings instance."""
     return Settings()
+
+"""Example usage:"""
+# from shared.config.settings import get_settings
