@@ -4,6 +4,13 @@ from gateway.interface.schemas.job_schemas import (
     SubmitJobResponse,
     JobStatusResponse,
     ErrorResponse,
+    HealthResponse,
+)
+from gateway.interface.schemas.wa_schemas import (
+    WAWebhookPayload,
+    WAWebhookResponse,
+    WASendMessageRequest,
+    WASendMessageResponse,
 )
 
 __all__ = [
@@ -11,4 +18,9 @@ __all__ = [
     "SubmitJobResponse",
     "JobStatusResponse",
     "ErrorResponse",
+    "HealthResponse",
+    "WAWebhookPayload",
+    "WAWebhookResponse",
+    "WASendMessageRequest",
+    "WASendMessageResponse",
 ]

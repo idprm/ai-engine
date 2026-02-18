@@ -5,9 +5,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from gateway.application.services import JobService
+from gateway.application.services import JobService, WAService
 from gateway.infrastructure.cache import RedisCache
-from gateway.infrastructure.messaging import RabbitMQPublisher
+from gateway.infrastructure.messaging import RabbitMQPublisher, WAMessagePublisher
 from gateway.infrastructure.persistence import JobRepositoryImpl
 from gateway.interface.routes import router as api_router
 from shared.config import get_settings
@@ -22,7 +22,9 @@ logger = logging.getLogger(__name__)
 # Global service instances
 _cache: RedisCache | None = None
 _publisher: RabbitMQPublisher | None = None
+_wa_publisher: WAMessagePublisher | None = None
 _job_service: JobService | None = None
+_wa_service: WAService | None = None
 
 
 def get_job_service() -> JobService:
@@ -39,10 +41,24 @@ def get_job_service() -> JobService:
     return _job_service
 
 
+def get_wa_service() -> WAService:
+    """Get or create WAService instance."""
+    global _wa_service
+    if _wa_service is None:
+        settings = get_settings()
+        _wa_service = WAService(
+            job_service=get_job_service(),
+            wa_publisher=_wa_publisher,
+            default_config_name="default-smart",
+            default_template_name="default-assistant",
+        )
+    return _wa_service
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager for startup/shutdown."""
-    global _cache, _publisher
+    global _cache, _publisher, _wa_publisher
 
     settings = get_settings()
     logger.info(f"Starting {settings.app_name} in {settings.app_env} mode")
@@ -57,6 +73,12 @@ async def lifespan(app: FastAPI):
     )
     await _publisher.connect()
 
+    _wa_publisher = WAMessagePublisher(
+        url=settings.rabbitmq_url,
+        queue_name=settings.rabbitmq_wa_queue,
+    )
+    await _wa_publisher.connect()
+
     logger.info("Gateway service started successfully")
 
     yield
@@ -67,6 +89,8 @@ async def lifespan(app: FastAPI):
         await _cache.disconnect()
     if _publisher:
         await _publisher.disconnect()
+    if _wa_publisher:
+        await _wa_publisher.disconnect()
     logger.info("Gateway service shutdown complete")
 
 

@@ -35,10 +35,17 @@ class Settings(BaseSettings):
     rabbitmq_url: str = Field(default="amqp://guest:guest@localhost:5672/")
     rabbitmq_task_queue: str = "ai_tasks"
     rabbitmq_event_exchange: str = "ai_events"
+    rabbitmq_wa_queue: str = "wa_messages"  # Queue for WhatsApp outgoing messages
 
     # LLM Provider API Keys (env var names, not actual keys)
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
+
+    # WAHA (WhatsApp HTTP API) Configuration
+    waha_server_url: str = Field(default="http://localhost:3000")
+    waha_api_key: str | None = None
+    waha_webhook_secret: str | None = None  # HMAC secret for webhook validation
+    waha_session: str = "default"
 
     # Service-specific
     service_name: str = "unknown"

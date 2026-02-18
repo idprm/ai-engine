@@ -16,6 +16,7 @@ env:
   REGISTRY: docker.io
   GATEWAY_IMAGE: ${{ secrets.DOCKER_USERNAME }}/ai-platform-gateway
   AI_ENGINE_IMAGE: ${{ secrets.DOCKER_USERNAME }}/ai-platform-ai-engine
+  WAHA_SENDER_IMAGE: ${{ secrets.DOCKER_USERNAME }}/ai-platform-waha-sender
 
 jobs:
   build:
@@ -29,6 +30,9 @@ jobs:
           - name: ai-engine
             dockerfile: services/ai_engine/Dockerfile
             image: ai-platform-ai-engine
+          - name: waha-sender
+            dockerfile: services/waha_sender/Dockerfile
+            image: ai-platform-waha-sender
     permissions:
       contents: read
       packages: write
@@ -57,7 +61,6 @@ jobs:
             type=ref,event=pr
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=sha,prefix=sha-
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image

@@ -66,6 +66,10 @@ services:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/ai_platform
       - REDIS_URL=redis://redis:6379/0
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - WAHA_SERVER_URL=${WAHA_SERVER_URL:-http://waha:3000}
+      - WAHA_API_KEY=${WAHA_API_KEY:-}
+      - WAHA_WEBHOOK_SECRET=${WAHA_WEBHOOK_SECRET:-}
+      - WAHA_SESSION=${WAHA_SESSION:-default}
     volumes:
       - ./shared:/app/shared:ro
       - ./services/gateway/src/gateway:/app/gateway:ro
@@ -107,10 +111,49 @@ services:
     deploy:
       replicas: 2
 
+  # WAHA Sender Service - Sends WhatsApp messages
+  waha-sender:
+    build:
+      context: .
+      dockerfile: services/waha_sender/Dockerfile
+    container_name: ai-platform-waha-sender
+    environment:
+      - SERVICE_NAME=waha-sender
+      - REDIS_URL=redis://redis:6379/0
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - WAHA_SERVER_URL=${WAHA_SERVER_URL:-http://waha:3000}
+      - WAHA_API_KEY=${WAHA_API_KEY:-}
+      - WAHA_SESSION=${WAHA_SESSION:-default}
+    volumes:
+      - ./shared:/app/shared:ro
+      - ./services/waha_sender/src/waha_sender:/app/waha_sender:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    deploy:
+      replicas: 1
+
+  # WAHA (WhatsApp HTTP API) Server
+  # Uncomment to run WAHA locally
+  # waha:
+  #   image: devlikeapro/waha:latest
+  #   container_name: ai-platform-waha
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     - WHATSAPP_HOOK_URL=http://gateway:8000/v1/webhook/whatsapp
+  #     - WHATSAPP_HOOK_EVENTS=message,message.any,session.status
+  #   volumes:
+  #     - waha_sessions:/app/.sessions
+  #   restart: unless-stopped
+
 volumes:
   postgres_data:
   redis_data:
   rabbitmq_data:
+  # waha_sessions:  # Uncomment when using local WAHA
 
 networks:
   default:
