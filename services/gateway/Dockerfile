@@ -7,8 +7,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy pyproject files
-COPY pyproject.toml ./
+# Copy pyproject files and README
+COPY pyproject.toml README.md ./
 COPY services/gateway/pyproject.toml ./services/gateway/
 
 # Copy source code (in correct locations for editable install)

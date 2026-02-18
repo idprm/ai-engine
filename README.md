@@ -61,6 +61,10 @@ ai-platform/
 ├── pyproject.toml
 ├── .env.example
 │
+├── .github/
+│   └── workflows/
+│       └── docker.yml              # CI/CD pipeline
+│
 ├── shared/                         # Shared kernel
 │   ├── config/settings.py          # Pydantic settings
 │   ├── events/base_event.py        # Domain event base
@@ -286,6 +290,47 @@ python -m ai_engine.main
 
 ```bash
 pytest tests/
+```
+
+---
+
+## CI/CD
+
+This project uses GitHub Actions for continuous integration and deployment.
+
+### Workflow
+
+The CI/CD pipeline (`.github/workflows/docker.yml`) automatically:
+
+1. **Builds** Docker images for both services on every push/PR
+2. **Pushes** images to Docker Hub on `main`/`master` branch
+3. **Scans** images for vulnerabilities with Trivy
+
+### Image Tags
+
+| Trigger | Tag Format |
+|---------|------------|
+| Main branch | `latest`, `sha-<commit>` |
+| Version tag | `v1.0.0`, `v1.0` |
+| Pull request | `pr-<number>` (build only, no push) |
+
+### Required Secrets
+
+Configure these in your GitHub repository settings:
+
+| Secret | Description |
+|--------|-------------|
+| `DOCKER_USERNAME` | Docker Hub username |
+| `DOCKER_PASSWORD` | Docker Hub access token |
+
+### Manual Deploy
+
+```bash
+# Build and push manually
+docker build -f services/gateway/Dockerfile -t your-username/ai-platform-gateway:latest .
+docker build -f services/ai_engine/Dockerfile -t your-username/ai-platform-ai-engine:latest .
+docker push your-username/ai-platform-gateway:latest
+docker push your-username/ai-platform-ai-engine:latest
 ```
 
 ---

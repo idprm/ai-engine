@@ -274,6 +274,34 @@ async def get_db_session():
 
 ---
 
+## CI/CD Pipeline
+
+GitHub Actions workflow at `.github/workflows/docker.yml`:
+
+### Triggers
+- Push to `main`/`master` branch
+- Version tags (`v*`)
+- Pull requests to `main`/`master`
+
+### Services Built
+- `ai-platform-gateway` — Gateway service image
+- `ai-platform-ai-engine` — AI Engine worker image
+
+### Image Tagging Strategy
+- `latest` — Default branch builds
+- `sha-<commit>` — Commit SHA prefix
+- `v1.0.0`, `v1.0` — Semantic version tags
+- `pr-<number>` — Pull request builds (not pushed)
+
+### Security Scanning
+Trivy scans for CRITICAL/HIGH vulnerabilities; results uploaded to GitHub Security tab.
+
+### Required GitHub Secrets
+- `DOCKER_USERNAME` — Docker Hub username
+- `DOCKER_PASSWORD` — Docker Hub access token (not password)
+
+---
+
 ## Environment Variables
 
 | Variable | Used By | Description |
@@ -329,6 +357,7 @@ docker-compose up --scale ai-engine=4
 
 | What | Where |
 |------|-------|
+| CI/CD workflow | `.github/workflows/docker.yml` |
 | Job entity | `services/gateway/src/gateway/domain/entities/job.py` |
 | Job service | `services/gateway/src/gateway/application/services/job_service.py` |
 | API routes | `services/gateway/src/gateway/interface/routes/api.py` |
