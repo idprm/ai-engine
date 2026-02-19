@@ -6,10 +6,12 @@ This file provides context and implementation details for AI coding assistants (
 
 ## Project Overview
 
-This is a **Python monorepo** implementing a scalable AI processing platform using **Domain-Driven Design (DDD)** architecture. The two primary services are:
+This is a **Python monorepo** implementing a scalable AI processing platform using **Domain-Driven Design (DDD)** architecture. The services include:
 
 - **`services/gateway/`** — FastAPI service that accepts REST requests and enqueues jobs.
 - **`services/ai_engine/`** — Worker service that consumes jobs, runs LangGraph pipelines, and writes results.
+- **`services/waha_sender/`** — WhatsApp message sender service via WAHA API.
+- **`services/crm_chatbot/`** — Multi-tenant CRM chatbot for WhatsApp customer interactions.
 
 They share code through **`shared/`**, the shared kernel containing cross-cutting concerns.
 
@@ -92,6 +94,32 @@ services/ai_engine/src/ai_engine/
 │   └── cache/                   # Redis client
 └── interface/
     └── handlers/                # Message handlers
+```
+
+### CRM Chatbot Context
+
+**Aggregate Roots:** `Tenant`, `Customer`, `Product`, `Order`, `Conversation`
+
+```
+services/crm_chatbot/src/crm_chatbot/
+├── domain/
+│   ├── entities/                # Tenant, Customer, Product, Order, Conversation, Payment
+│   ├── value_objects/           # TenantId, CustomerId, OrderStatus, Money, ConversationState
+│   ├── events/                  # Domain events
+│   └── repositories/            # Repository interfaces
+├── application/
+│   ├── services/                # ChatbotOrchestrator, ConversationService, OrderService
+│   ├── dto/                     # Data transfer objects
+│   └── handlers/                # WAMessageHandler
+├── infrastructure/
+│   ├── persistence/             # SQLAlchemy repository implementations
+│   ├── messaging/               # RabbitMQ consumer/publisher
+│   ├── llm/                     # CRMLangGraphRunner, CRM agent tools
+│   ├── payment/                 # MidtransClient, XenditClient
+│   └── cache/                   # ConversationCache (Redis)
+└── interface/
+    ├── controllers/             # Tenant, Product, Order, Webhook controllers
+    └── routes/api.py
 ```
 
 ---
@@ -371,6 +399,8 @@ GitHub Actions workflow at `.github/workflows/docker.yml`:
 ### Services Built
 - `ai-platform-gateway` — Gateway service image
 - `ai-platform-ai-engine` — AI Engine worker image
+- `ai-platform-waha-sender` — WhatsApp sender service image
+- `ai-platform-crm-chatbot` — CRM Chatbot service image
 
 ### Image Tagging Strategy
 - `latest` — Default branch builds
@@ -392,8 +422,15 @@ GitHub Actions workflow at `.github/workflows/docker.yml`:
 | `REDIS_URL` | Both | Redis connection string |
 | `RABBITMQ_URL` | Both | RabbitMQ AMQP connection |
 | `RABBITMQ_TASK_QUEUE` | Both | Queue name (default: `ai_tasks`) |
+| `RABBITMQ_CRM_QUEUE` | CRM | CRM queue name (default: `crm_tasks`) |
+| `RABBITMQ_WA_QUEUE` | WAHA/CRM | WhatsApp message queue (default: `wa_messages`) |
 | `OPENAI_API_KEY` | AI Engine | OpenAI API key |
 | `ANTHROPIC_API_KEY` | AI Engine | Anthropic API key |
+| `WAHA_SERVER_URL` | WAHA/CRM | WAHA server URL |
+| `WAHA_API_KEY` | WAHA/CRM | WAHA API key |
+| `MIDTRANS_SERVER_KEY` | CRM | Midtrans server key |
+| `MIDTRANS_IS_PRODUCTION` | CRM | Midtrans production mode |
+| `CONVERSATION_TTL` | CRM | Conversation cache TTL (seconds) |
 
 API keys are referenced by name in `llm_configs.api_key_env` and resolved at runtime.
 
@@ -429,6 +466,21 @@ Extend `AgentState` and modify `LangGraphRunner.run()` to add nodes/edges.
 docker-compose up --scale ai-engine=4
 ```
 
+### Add a new CRM agent tool
+
+1. Create tool function in `infrastructure/llm/tools/` (e.g., `new_tools.py`)
+2. Use `@tool` decorator from `langchain_core.tools`
+3. Add executor function (receives repositories as parameters)
+4. Register executor in `ChatbotOrchestrator._register_tool_executors()`
+5. Add tool to `get_tools_for_conversation_state()` in `tool_registry.py`
+
+### Add a new payment provider
+
+1. Create client in `infrastructure/payment/` (e.g., `new_payment_client.py`)
+2. Implement `create_transaction()` and `check_transaction_status()` methods
+3. Add webhook handler in `WebhookController`
+4. Update `Tenant.payment_provider` validation
+
 ---
 
 ## Notes & Gotchas
@@ -461,3 +513,14 @@ docker-compose up --scale ai-engine=4
 | Processing DTOs | `services/ai_engine/src/ai_engine/application/dto/processing_dto.py` |
 | Shared settings | `shared/config/settings.py` |
 | Database init | `infra/docker/postgres/init.sql` |
+| **CRM Chatbot** | |
+| Tenant entity | `services/crm_chatbot/src/crm_chatbot/domain/entities/tenant.py` |
+| Customer entity | `services/crm_chatbot/src/crm_chatbot/domain/entities/customer.py` |
+| Order entity | `services/crm_chatbot/src/crm_chatbot/domain/entities/order.py` |
+| Product entity | `services/crm_chatbot/src/crm_chatbot/domain/entities/product.py` |
+| Conversation entity | `services/crm_chatbot/src/crm_chatbot/domain/entities/conversation.py` |
+| Chatbot orchestrator | `services/crm_chatbot/src/crm_chatbot/application/services/chatbot_orchestrator.py` |
+| CRM LangGraph runner | `services/crm_chatbot/src/crm_chatbot/infrastructure/llm/crm_langgraph_runner.py` |
+| CRM agent tools | `services/crm_chatbot/src/crm_chatbot/infrastructure/llm/tools/` |
+| Midtrans client | `services/crm_chatbot/src/crm_chatbot/infrastructure/payment/midtrans_client.py` |
+| WA message handler | `services/crm_chatbot/src/crm_chatbot/application/handlers/wa_message_handler.py` |

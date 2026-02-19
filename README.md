@@ -7,11 +7,13 @@ A scalable AI processing platform built with **Domain-Driven Design (DDD)** arch
 ## Key Features
 
 - **Domain-Driven Design** — Classic 4-layer architecture (Domain, Application, Infrastructure, Interface) with isolated bounded contexts
-- **Microservices Architecture** — Decoupled Gateway and AI Engine services
+- **Microservices Architecture** — Decoupled Gateway, AI Engine, WAHA Sender, and CRM Chatbot services
 - **Asynchronous Processing** — RabbitMQ message broker for long-running AI tasks
 - **Dynamic Configuration** — LLM configs and prompt templates stored in PostgreSQL for runtime changes
-- **LangGraph Integration** — Stateful, multi-step agent workflows
+- **LangGraph Integration** — Stateful, multi-step agent workflows with tool-calling
 - **Multi-Agent Architecture** — Specialized agents (Main, Fallback, Followup, Moderation) with intelligent routing
+- **WhatsApp CRM Chatbot** — Multi-tenant customer service with product catalog, orders, and payments
+- **Payment Integration** — Midtrans and Xendit payment gateway support
 - **High Performance** — SQLAlchemy 2.0 with asyncpg, Redis caching, connection pooling
 
 ---
@@ -36,20 +38,26 @@ A scalable AI processing platform built with **Domain-Driven Design (DDD)** arch
                               ▼
                          RabbitMQ
                               │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                        AI ENGINE SERVICE                        │
-├─────────────────────────────────────────────────────────────────┤
-│  Interface/        │  Application/      │  Domain/             │
-│  - handlers/      │  - services/       │  - entities/         │
-│    (MQ consumer)  │  - dto/            │  - value_objects/    │
-│                   │                    │  - services/         │
-│                   │                    │  - events/           │
-├─────────────────────────────────────────────────────────────────┤
-│  Infrastructure/                                                 │
-│  - persistence/ (SQLAlchemy repos)    - cache/ (Redis)         │
-│  - llm/   (LangChain/LangGraph)       - messaging/ (Consumer)  │
-└─────────────────────────────────────────────────────────────────┘
+            ┌─────────────────┼─────────────────┐
+            │                 │                 │
+            ▼                 ▼                 ▼
+┌───────────────────┐ ┌───────────────────┐ ┌───────────────────┐
+│   AI ENGINE       │ │   WAHA SENDER     │ │   CRM CHATBOT     │
+│   SERVICE         │ │   SERVICE         │ │   SERVICE         │
+├───────────────────┤ ├───────────────────┤ ├───────────────────┤
+│  - LLM Pipeline   │ │  - WhatsApp API   │ │  - Multi-tenant   │
+│  - Multi-agent    │ │  - Message send   │ │  - Product catalog│
+│  - LangGraph      │ │  - WAHA client    │ │  - Order mgmt     │
+└───────────────────┘ └───────────────────┘ │  - Payments       │
+                                          └───────────────────┘
+```
+
+### Message Flow
+
+```
+[WhatsApp] --webhook--> [Gateway] --RabbitMQ (crm_tasks)--> [CRM Chatbot]
+                                                              │
+[WhatsApp] <--send-- [Waha Sender] <--RabbitMQ (wa_messages)--┘
 ```
 
 ---
@@ -93,25 +101,57 @@ ai-platform/
 │   │           ├── routes/api.py
 │   │           └── schemas/job_schemas.py
 │   │
-│   └── ai_engine/                  # Worker service
+│   ├── ai_engine/                  # Worker service
+│   │   ├── Dockerfile
+│   │   ├── pyproject.toml
+│   │   └── src/ai_engine/
+│   │       ├── domain/
+│   │       │   ├── entities/       # LLMConfig, PromptTemplate, AgentConfig
+│   │       │   ├── value_objects/  # Provider, ModelName, Temperature
+│   │       │   ├── services/       # LLMSelector
+│   │       │   └── repositories/   # Repository interfaces
+│   │       ├── application/
+│   │       │   ├── services/processing_service.py
+│   │       │   └── dto/processing_dto.py
+│   │       ├── infrastructure/
+│   │       │   ├── persistence/    # Repository implementations
+│   │       │   ├── llm/            # LLMFactory, LangGraphRunner, AgentNodes, AgentState
+│   │       │   ├── messaging/      # RabbitMQ consumer
+│   │       │   └── cache/          # Redis client
+│   │       └── interface/
+│   │           └── handlers/message_handler.py
+│   │
+│   ├── waha_sender/                # WhatsApp message sender
+│   │   ├── Dockerfile
+│   │   ├── pyproject.toml
+│   │   └── src/waha_sender/
+│   │       ├── infrastructure/
+│   │       │   ├── waha/           # WAHA API client
+│   │       │   └── messaging/      # RabbitMQ consumer
+│   │       └── main.py
+│   │
+│   └── crm_chatbot/                # CRM Chatbot service
 │       ├── Dockerfile
 │       ├── pyproject.toml
-│       └── src/ai_engine/
+│       └── src/crm_chatbot/
 │           ├── domain/
-│           │   ├── entities/       # LLMConfig, PromptTemplate, AgentConfig
-│           │   ├── value_objects/  # Provider, ModelName, Temperature
-│           │   ├── services/       # LLMSelector
+│           │   ├── entities/       # Tenant, Customer, Product, Order, Conversation, Payment
+│           │   ├── value_objects/  # TenantId, OrderStatus, Money, ConversationState
+│           │   ├── events/         # Domain events
 │           │   └── repositories/   # Repository interfaces
 │           ├── application/
-│           │   ├── services/processing_service.py
-│           │   └── dto/processing_dto.py
+│           │   ├── services/       # ChatbotOrchestrator, OrderService, CustomerService
+│           │   ├── dto/            # Data transfer objects
+│           │   └── handlers/       # WAMessageHandler
 │           ├── infrastructure/
-│           │   ├── persistence/    # Repository implementations
-│           │   ├── llm/            # LLMFactory, LangGraphRunner, AgentNodes, AgentState
-│           │   ├── messaging/      # RabbitMQ consumer
-│           │   └── cache/          # Redis client
+│           │   ├── persistence/    # SQLAlchemy repositories
+│           │   ├── messaging/      # RabbitMQ consumer/publisher
+│           │   ├── llm/            # CRMLangGraphRunner, tools
+│           │   ├── payment/        # Midtrans, Xendit clients
+│           │   └── cache/          # Conversation cache
 │           └── interface/
-│               └── handlers/message_handler.py
+│               ├── controllers/    # Tenant, Product, Order, Webhook controllers
+│               └── routes/api.py
 │
 └── infra/
     └── docker/
@@ -297,6 +337,58 @@ result = await processing_service.process_multi_agent(
 
 ---
 
+## CRM Chatbot Service
+
+The CRM Chatbot service enables WhatsApp-based customer interactions with multi-tenant support.
+
+### Features
+
+- **Multi-tenant Architecture** — Each business has isolated products, customers, and configurations
+- **WhatsApp Integration** — Via WAHA (WhatsApp HTTP API) for sending/receiving messages
+- **Product Catalog** — Search products, check stock, get details
+- **Order Management** — Create orders, add items, track status, cancel
+- **Payment Integration** — Midtrans and Xendit payment gateways
+- **AI-Powered Responses** — LangGraph agent with domain tools
+
+### CRM Agent Tools
+
+| Tool | Description |
+|------|-------------|
+| `search_products` | Search product catalog by query |
+| `get_product_details` | Get full product info with variants |
+| `check_stock` | Check variant availability |
+| `create_order` | Create new empty order |
+| `add_to_order` | Add item to current order |
+| `get_order_status` | Check order status |
+| `confirm_order` | Confirm order for payment |
+| `initiate_payment` | Generate payment link |
+| `get_customer_profile` | Get customer info |
+| `update_customer_profile` | Update customer details |
+
+### Conversation States
+
+```
+GREETING → BROWSING → ORDERING → CHECKOUT → PAYMENT → COMPLETED
+                ↑__________|___________|          |
+                           |______________________|
+```
+
+### API Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /v1/crm/tenants` | Create tenant |
+| `GET /v1/crm/tenants/{id}` | Get tenant |
+| `PUT /v1/crm/tenants/{id}/prompt` | Update AI prompt |
+| `POST /v1/crm/tenants/{id}/products` | Add product |
+| `GET /v1/crm/tenants/{id}/products` | List products |
+| `GET /v1/crm/orders/{id}` | Get order |
+| `PUT /v1/crm/orders/{id}/status` | Update status |
+| `POST /v1/crm/webhook/{tenant_id}` | WhatsApp webhook |
+| `POST /v1/crm/payments/callback/{provider}` | Payment callback |
+
+---
+
 ## Database Schema
 
 ```sql
@@ -375,8 +467,15 @@ This project uses GitHub Actions for continuous integration and deployment.
 
 The CI/CD pipeline (`.github/workflows/docker.yml`) automatically:
 
-1. **Builds** Docker images for both services on every push/PR
+1. **Builds** Docker images for all services on every push/PR
 2. **Pushes** images to Docker Hub on `main`/`master` branch
+
+### Services
+
+- `ai-platform-gateway` — Gateway service
+- `ai-platform-ai-engine` — AI Engine worker
+- `ai-platform-waha-sender` — WhatsApp sender
+- `ai-platform-crm-chatbot` — CRM Chatbot
 
 ### Image Tags
 
@@ -401,8 +500,12 @@ Configure these in your GitHub repository settings:
 # Build and push manually
 docker build -f services/gateway/Dockerfile -t your-username/ai-platform-gateway:latest .
 docker build -f services/ai_engine/Dockerfile -t your-username/ai-platform-ai-engine:latest .
+docker build -f services/waha_sender/Dockerfile -t your-username/ai-platform-waha-sender:latest .
+docker build -f services/crm_chatbot/Dockerfile -t your-username/ai-platform-crm-chatbot:latest .
 docker push your-username/ai-platform-gateway:latest
 docker push your-username/ai-platform-ai-engine:latest
+docker push your-username/ai-platform-waha-sender:latest
+docker push your-username/ai-platform-crm-chatbot:latest
 ```
 
 ---
@@ -425,5 +528,13 @@ docker push your-username/ai-platform-ai-engine:latest
 | `DATABASE_URL` | PostgreSQL connection string (asyncpg) |
 | `REDIS_URL` | Redis connection string |
 | `RABBITMQ_URL` | RabbitMQ AMQP connection string |
+| `RABBITMQ_TASK_QUEUE` | Task queue name (default: `ai_tasks`) |
+| `RABBITMQ_CRM_QUEUE` | CRM queue name (default: `crm_tasks`) |
+| `RABBITMQ_WA_QUEUE` | WhatsApp message queue (default: `wa_messages`) |
 | `OPENAI_API_KEY` | OpenAI API key |
 | `ANTHROPIC_API_KEY` | Anthropic API key |
+| `WAHA_SERVER_URL` | WAHA server URL |
+| `WAHA_API_KEY` | WAHA API key |
+| `MIDTRANS_SERVER_KEY` | Midtrans server key |
+| `MIDTRANS_IS_PRODUCTION` | Use Midtrans production mode |
+| `CONVERSATION_TTL` | Conversation cache TTL (seconds) |

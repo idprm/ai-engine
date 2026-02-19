@@ -17,6 +17,7 @@ env:
   GATEWAY_IMAGE: ${{ secrets.DOCKER_USERNAME }}/ai-platform-gateway
   AI_ENGINE_IMAGE: ${{ secrets.DOCKER_USERNAME }}/ai-platform-ai-engine
   WAHA_SENDER_IMAGE: ${{ secrets.DOCKER_USERNAME }}/ai-platform-waha-sender
+  CRM_CHATBOT_IMAGE: ${{ secrets.DOCKER_USERNAME }}/ai-platform-crm-chatbot
 
 jobs:
   build:
@@ -33,6 +34,9 @@ jobs:
           - name: waha-sender
             dockerfile: services/waha_sender/Dockerfile
             image: ai-platform-waha-sender
+          - name: crm-chatbot
+            dockerfile: services/crm_chatbot/Dockerfile
+            image: ai-platform-crm-chatbot
     permissions:
       contents: read
       packages: write
