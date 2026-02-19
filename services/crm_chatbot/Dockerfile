@@ -1,67 +1,36 @@
 # CRM Chatbot Service Dockerfile
-# Multi-stage build for optimized production image
+FROM python:3.12-slim
 
-# ============================================
-# Stage 1: Builder
-# ============================================
-FROM python:3.11-slim as builder
-
-# Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# Create virtual environment
-RUN python -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-
-# Install Python dependencies
 WORKDIR /app
-COPY pyproject.toml ./
 
-# Install dependencies
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir .
-
-# ============================================
-# Stage 2: Production
-# ============================================
-FROM python:3.11-slim as production
-
-# Install runtime dependencies only
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq5 \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user
-RUN useradd -m -u 1000 -s /bin/bash appuser
+# Copy pyproject files and README
+COPY pyproject.toml README.md ./
+COPY services/crm_chatbot/pyproject.toml ./services/crm_chatbot/
 
-# Copy virtual environment from builder
-COPY --from=builder /opt/venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-
-# Set working directory
-WORKDIR /app
-
-# Copy shared modules first
+# Copy source code (in correct locations for editable install)
+# Root package expects shared/ at /app/shared/
 COPY shared/ /app/shared/
+# CRM Chatbot package expects crm_chatbot/ at /app/services/crm_chatbot/crm_chatbot/
+COPY services/crm_chatbot/src/crm_chatbot/ /app/services/crm_chatbot/crm_chatbot/
 
-# Copy application code
-COPY services/crm_chatbot/src/ /app/src/
+# Also copy ai_engine for LLM dependencies (LangGraph runner, factory, etc.)
+COPY services/ai_engine/pyproject.toml ./services/ai_engine/
+COPY services/ai_engine/src/ai_engine/ /app/services/ai_engine/ai_engine/
 
-# Set environment variables
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONPATH=/app/src:/app \
-    SERVICE_NAME=crm_chatbot
+# Install Python dependencies
+RUN pip install --no-cache-dir -e . && \
+    pip install --no-cache-dir -e ./services/ai_engine && \
+    pip install --no-cache-dir -e ./services/crm_chatbot
 
-# Change ownership to app user
-RUN chown -R appuser:appuser /app
-
-# Switch to non-root user
-USER appuser
+# Set Python path
+ENV PYTHONPATH=/app:/app/shared:/app/services/crm_chatbot:/app/services/ai_engine
+ENV PYTHONUNBUFFERED=1
+ENV SERVICE_NAME=crm_chatbot
 
 # Expose port
 EXPOSE 8000
