@@ -1,12 +1,15 @@
 """RabbitMQ publisher for WhatsApp response messages."""
+import asyncio
 import json
 import logging
 import uuid
 from typing import Any
 
 import aio_pika
+from aio_pika import ExchangeType
 
 from shared.config import get_settings
+from crm_chatbot.infrastructure.utils.message_splitter import MessageSplitter
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +111,64 @@ class WAResponsePublisher:
         logger.debug(f"Published WA message: {message_id} to {chat_id}")
 
         return message_id
+
+    async def publish_split_message(
+        self,
+        wa_session: str,
+        chat_id: str,
+        text: str,
+        metadata: dict[str, Any] | None = None,
+        delay_between_messages: float = 1.5,
+        max_length: int = 1000,
+        min_split_length: int = 500,
+    ) -> list[str]:
+        """Publish a message, splitting if necessary.
+
+        Splits long text into chunks at sentence boundaries and publishes
+        each with a delay for better readability on mobile devices.
+
+        Args:
+            wa_session: The WAHA session name to use.
+            chat_id: The WhatsApp chat ID to send to.
+            text: The message text to send.
+            metadata: Optional metadata for logging/tracking.
+            delay_between_messages: Seconds to wait between messages (default: 1.5).
+            max_length: Maximum characters per chunk (default: 1000).
+            min_split_length: Minimum length before splitting (default: 500).
+
+        Returns:
+            List of message IDs for all published chunks.
+        """
+        splitter = MessageSplitter(
+            max_length=max_length,
+            min_split_length=min_split_length,
+        )
+        chunks = splitter.split_into_chunks(text)
+
+        message_ids = []
+        total_chunks = len(chunks)
+
+        for i, chunk in enumerate(chunks):
+            # Add delay between messages (not before first)
+            if i > 0:
+                await asyncio.sleep(delay_between_messages)
+
+            chunk_metadata = {
+                **(metadata or {}),
+                "chunk": i + 1,
+                "total_chunks": total_chunks,
+            }
+
+            message_id = await self.publish_message(
+                wa_session=wa_session,
+                chat_id=chat_id,
+                text=chunk,
+                metadata=chunk_metadata,
+            )
+            message_ids.append(message_id)
+
+        logger.debug(f"Published {total_chunks} message(s) to {chat_id}")
+        return message_ids
 
     async def publish_typing_indicator(
         self,

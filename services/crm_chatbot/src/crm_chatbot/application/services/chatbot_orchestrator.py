@@ -300,7 +300,7 @@ class ChatbotOrchestrator:
 
         # Publish response if we have a valid conversation
         if response.conversation_id:
-            await self._response_publisher.publish_message(
+            await self._response_publisher.publish_split_message(
                 wa_session=message.wa_session,
                 chat_id=message.chat_id,
                 text=response.response_text,
