@@ -11,12 +11,14 @@ class LLMConfig:
     Represents a configured LLM provider/model combination
     that can be used for processing jobs.
     """
+
     _name: str
     _provider: Provider
     _model_name: ModelName
     _api_key_env: str
     _temperature: Temperature = field(default_factory=Temperature.balanced)
     _max_tokens: int = 4096
+    _timeout_seconds: int = 120  # Default 2 minutes
     _is_active: bool = True
 
     @property
@@ -44,6 +46,10 @@ class LLMConfig:
         return self._max_tokens
 
     @property
+    def timeout_seconds(self) -> int:
+        return self._timeout_seconds
+
+    @property
     def is_active(self) -> bool:
         return self._is_active
 
@@ -65,6 +71,12 @@ class LLMConfig:
             raise ValueError("max_tokens must be positive")
         self._max_tokens = max_tokens
 
+    def update_timeout(self, timeout_seconds: int) -> None:
+        """Update the timeout setting."""
+        if timeout_seconds < 1:
+            raise ValueError("timeout_seconds must be positive")
+        self._timeout_seconds = timeout_seconds
+
     @classmethod
     def create(
         cls,
@@ -74,6 +86,7 @@ class LLMConfig:
         api_key_env: str,
         temperature: Temperature | None = None,
         max_tokens: int = 4096,
+        timeout_seconds: int = 120,
     ) -> "LLMConfig":
         """Factory method to create a new LLMConfig."""
         return cls(
@@ -83,6 +96,7 @@ class LLMConfig:
             _api_key_env=api_key_env,
             _temperature=temperature or Temperature.balanced(),
             _max_tokens=max_tokens,
+            _timeout_seconds=timeout_seconds,
         )
 
     def to_dict(self) -> dict:
@@ -94,5 +108,6 @@ class LLMConfig:
             "api_key_env": self._api_key_env,
             "temperature": float(self._temperature),
             "max_tokens": self._max_tokens,
+            "timeout_seconds": self._timeout_seconds,
             "is_active": self._is_active,
         }

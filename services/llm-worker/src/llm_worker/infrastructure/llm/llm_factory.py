@@ -43,23 +43,29 @@ class LLMFactory:
         model_name = str(config.model_name)
         temperature = float(config.temperature)
         max_tokens = config.max_tokens
+        timeout = config.timeout_seconds
 
         if provider == "openai":
-            logger.debug(f"Creating OpenAI model: {model_name}")
+            logger.debug(f"Creating OpenAI model: {model_name} with timeout={timeout}s")
             return ChatOpenAI(
                 model=model_name,
                 api_key=api_key,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                timeout=timeout,
+                request_timeout=timeout,
             )
 
         elif provider == "anthropic":
-            logger.debug(f"Creating Anthropic model: {model_name}")
+            logger.debug(
+                f"Creating Anthropic model: {model_name} with timeout={timeout}s"
+            )
             return ChatAnthropic(
                 model=model_name,
                 api_key=api_key,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                timeout=timeout,
             )
 
         else:
@@ -87,6 +93,7 @@ class LLMFactory:
         model_name = config_dict.get("model_name", "")
         temperature = config_dict.get("temperature", 0.7)
         max_tokens = config_dict.get("max_tokens", 4096)
+        timeout = config_dict.get("timeout_seconds", 120)
 
         if provider == "openai":
             return ChatOpenAI(
@@ -94,6 +101,8 @@ class LLMFactory:
                 api_key=api_key,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                timeout=timeout,
+                request_timeout=timeout,
             )
 
         elif provider == "anthropic":
@@ -102,6 +111,7 @@ class LLMFactory:
                 api_key=api_key,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                timeout=timeout,
             )
 
         else:

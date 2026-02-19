@@ -8,9 +8,24 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from llm_worker.domain.entities import AgentType, LLMConfig
 from llm_worker.infrastructure.llm.agent_state import AgentState
+from llm_worker.infrastructure.llm.backoff import BackoffConfig
+from llm_worker.infrastructure.llm.circuit_breaker import (
+    CircuitBreakerConfig,
+    CircuitBreakerRegistry,
+    CircuitOpenError,
+)
 from llm_worker.infrastructure.llm.llm_factory import LLMFactory
+from llm_worker.infrastructure.llm.response_validator import validate_response
+from llm_worker.infrastructure.llm.timeout import LLMTimeoutError, with_timeout
 
 logger = logging.getLogger(__name__)
+
+# Default circuit breaker configuration for LLM calls
+DEFAULT_CIRCUIT_BREAKER_CONFIG = CircuitBreakerConfig(
+    failure_threshold=5,
+    success_threshold=2,
+    timeout_seconds=60.0,
+)
 
 # Default moderation thresholds
 MODERATION_CATEGORIES = [
@@ -75,7 +90,21 @@ Respond in JSON format with:
                 HumanMessage(content=prompt),
             ]
 
-            response = await llm.ainvoke(messages)
+            # Get circuit breaker for this LLM config
+            registry = CircuitBreakerRegistry.get_instance()
+            circuit = registry.get_or_create(
+                f"moderation-{llm_config.name}",
+                DEFAULT_CIRCUIT_BREAKER_CONFIG,
+            )
+
+            # Execute with timeout and circuit breaker
+            response = await circuit.call(
+                with_timeout(
+                    llm.ainvoke(messages),
+                    timeout_seconds=llm_config.timeout_seconds,
+                    operation="moderation LLM call",
+                )
+            )
             response_text = response.content
 
             # Parse JSON response
@@ -191,12 +220,35 @@ def main_agent_node(
 
             messages = [SystemMessage(content=enhanced_prompt)] + state["messages"]
 
-            response = await llm.ainvoke(messages)
+            # Get circuit breaker for this LLM config
+            registry = CircuitBreakerRegistry.get_instance()
+            circuit = registry.get_or_create(
+                f"main-{llm_config.name}",
+                DEFAULT_CIRCUIT_BREAKER_CONFIG,
+            )
+
+            # Execute with timeout and circuit breaker
+            response = await circuit.call(
+                with_timeout(
+                    llm.ainvoke(messages),
+                    timeout_seconds=llm_config.timeout_seconds,
+                    operation="main_agent LLM call",
+                )
+            )
             response_message = response
 
             # Extract response and token usage
             response_text = response_message.content
             tokens_used = _extract_tokens(response_message)
+
+            # Validate response quality
+            validation = validate_response(response_text)
+            if not validation.is_valid:
+                logger.warning(f"Main agent response validation failed: {validation.reason}")
+                return {
+                    "error": f"Invalid response: {validation.reason}",
+                    "retry_count": state.get("retry_count", 0) + 1,
+                }
 
             logger.info(f"Main agent response generated, tokens: {tokens_used}")
 
@@ -206,6 +258,19 @@ def main_agent_node(
                 "error": None,
             }
 
+        except LLMTimeoutError as e:
+            logger.error(f"Main agent timed out: {e}")
+            return {
+                "error": str(e),
+                "retry_count": state.get("retry_count", 0) + 1,
+            }
+        except CircuitOpenError as e:
+            logger.error(f"Main agent circuit breaker open: {e}")
+            return {
+                "error": f"Service temporarily unavailable: {e}",
+                "retry_count": state.get("retry_count", 0) + 1,
+                "circuit_open": True,
+            }
         except Exception as e:
             logger.error(f"Main agent failed: {e}")
             return {
@@ -263,7 +328,21 @@ User's original question or request needs a straightforward response."""
                 SystemMessage(content=fallback_prompt),
             ] + state["messages"]
 
-            response = await llm.ainvoke(messages)
+            # Get circuit breaker for this LLM config
+            registry = CircuitBreakerRegistry.get_instance()
+            circuit = registry.get_or_create(
+                f"fallback-{llm_config.name}",
+                DEFAULT_CIRCUIT_BREAKER_CONFIG,
+            )
+
+            # Execute with timeout and circuit breaker
+            response = await circuit.call(
+                with_timeout(
+                    llm.ainvoke(messages),
+                    timeout_seconds=llm_config.timeout_seconds,
+                    operation="fallback_agent LLM call",
+                )
+            )
             response_text = response.content
 
             logger.info("Fallback agent response generated")
@@ -274,6 +353,16 @@ User's original question or request needs a straightforward response."""
                 "error": None,
             }
 
+        except (LLMTimeoutError, CircuitOpenError) as e:
+            logger.error(f"Fallback agent failed: {e}")
+            # Ultimate fallback - return a static response
+            return {
+                "final_response": (
+                    "I apologize, but I'm currently experiencing technical difficulties. "
+                    "Please try again in a moment or contact support if the issue persists."
+                ),
+                "error": str(e),
+            }
         except Exception as e:
             logger.error(f"Fallback agent failed: {e}")
             # Ultimate fallback - return a static response
@@ -319,8 +408,31 @@ def followup_agent_node(
             # Include conversation history for context
             messages = [SystemMessage(content=enhanced_prompt)] + state["messages"]
 
-            response = await llm.ainvoke(messages)
+            # Get circuit breaker for this LLM config
+            registry = CircuitBreakerRegistry.get_instance()
+            circuit = registry.get_or_create(
+                f"followup-{llm_config.name}",
+                DEFAULT_CIRCUIT_BREAKER_CONFIG,
+            )
+
+            # Execute with timeout and circuit breaker
+            response = await circuit.call(
+                with_timeout(
+                    llm.ainvoke(messages),
+                    timeout_seconds=llm_config.timeout_seconds,
+                    operation="followup_agent LLM call",
+                )
+            )
             response_text = response.content
+
+            # Validate response quality
+            validation = validate_response(response_text)
+            if not validation.is_valid:
+                logger.warning(f"Followup agent response validation failed: {validation.reason}")
+                return {
+                    "error": f"Invalid response: {validation.reason}",
+                    "retry_count": state.get("retry_count", 0) + 1,
+                }
 
             tokens_used = _extract_tokens(response)
 
@@ -332,6 +444,19 @@ def followup_agent_node(
                 "error": None,
             }
 
+        except LLMTimeoutError as e:
+            logger.error(f"Followup agent timed out: {e}")
+            return {
+                "error": str(e),
+                "retry_count": state.get("retry_count", 0) + 1,
+            }
+        except CircuitOpenError as e:
+            logger.error(f"Followup agent circuit breaker open: {e}")
+            return {
+                "error": f"Service temporarily unavailable: {e}",
+                "retry_count": state.get("retry_count", 0) + 1,
+                "circuit_open": True,
+            }
         except Exception as e:
             logger.error(f"Followup agent failed: {e}")
             return {

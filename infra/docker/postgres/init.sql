@@ -13,7 +13,24 @@ CREATE TABLE IF NOT EXISTS llm_configs (
     api_key_env VARCHAR(255) NOT NULL,
     temperature REAL DEFAULT 0.7,
     max_tokens INTEGER DEFAULT 4096,
+    timeout_seconds INTEGER DEFAULT 120,
     is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Jobs table for AI processing tasks
+CREATE TABLE IF NOT EXISTS jobs (
+    id VARCHAR(36) PRIMARY KEY,
+    prompt TEXT NOT NULL,
+    config_name VARCHAR(255) NOT NULL,
+    template_name VARCHAR(255) NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'QUEUED',
+    result TEXT,
+    error TEXT,
+    max_retries INTEGER DEFAULT 3,
+    retry_count INTEGER DEFAULT 0,
+    next_retry_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -261,6 +278,12 @@ CREATE INDEX IF NOT EXISTS idx_llm_configs_provider ON llm_configs(provider);
 CREATE INDEX IF NOT EXISTS idx_llm_configs_active ON llm_configs(is_active);
 CREATE INDEX IF NOT EXISTS idx_prompt_templates_name ON prompt_templates(name);
 
+-- Jobs table indexes
+CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+CREATE INDEX IF NOT EXISTS idx_jobs_config ON jobs(config_name);
+CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at);
+CREATE INDEX IF NOT EXISTS idx_jobs_next_retry ON jobs(next_retry_at) WHERE next_retry_at IS NOT NULL;
+
 -- =====================================================
 -- Default Data
 -- =====================================================
@@ -308,6 +331,11 @@ $$ language 'plpgsql';
 -- Apply triggers to all tables with updated_at
 CREATE TRIGGER update_llm_configs_updated_at
     BEFORE UPDATE ON llm_configs
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_jobs_updated_at
+    BEFORE UPDATE ON jobs
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 

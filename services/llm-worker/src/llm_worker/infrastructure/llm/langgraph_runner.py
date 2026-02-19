@@ -14,9 +14,30 @@ from llm_worker.infrastructure.llm.agent_nodes import (
     router_node,
 )
 from llm_worker.infrastructure.llm.agent_state import AgentState, create_initial_state
+from llm_worker.infrastructure.llm.backoff import (
+    BackoffConfig,
+    BackoffExhaustedError,
+    retry_with_backoff,
+)
+from llm_worker.infrastructure.llm.circuit_breaker import (
+    CircuitBreakerConfig,
+    CircuitBreakerRegistry,
+    CircuitOpenError,
+)
 from llm_worker.infrastructure.llm.llm_factory import LLMFactory
+from llm_worker.infrastructure.llm.timeout import LLMTimeoutError, with_timeout
 
 logger = logging.getLogger(__name__)
+
+# Default backoff configuration for graph execution retries
+DEFAULT_BACKOFF_CONFIG = BackoffConfig(
+    initial_delay=1.0,
+    max_delay=30.0,
+    multiplier=2.0,
+)
+
+# Retryable exceptions that should trigger a retry at the graph level
+RETRYABLE_EXCEPTIONS = (LLMTimeoutError, ConnectionError, ConnectionResetError)
 
 
 class LangGraphRunner:
@@ -53,11 +74,28 @@ class LangGraphRunner:
         # Create LLM instance
         llm = LLMFactory.create(config)
 
-        # Create the agent node function
+        # Get circuit breaker for this LLM config
+        registry = CircuitBreakerRegistry.get_instance()
+        circuit = registry.get_or_create(
+            f"simple-{config.name}",
+            CircuitBreakerConfig(
+                failure_threshold=5,
+                success_threshold=2,
+                timeout_seconds=60.0,
+            ),
+        )
+
+        # Create the agent node function with resilience
         async def agent_node(state: SimpleState) -> dict:
-            """Agent node that calls the LLM."""
+            """Agent node that calls the LLM with timeout and circuit breaker."""
             messages = [SystemMessage(content=system_prompt)] + state["messages"]
-            response = await llm.ainvoke(messages)
+            response = await circuit.call(
+                with_timeout(
+                    llm.ainvoke(messages),
+                    timeout_seconds=config.timeout_seconds,
+                    operation="simple_agent LLM call",
+                )
+            )
             return {"messages": [response]}
 
         # Build the graph
@@ -68,11 +106,29 @@ class LangGraphRunner:
 
         graph = workflow.compile()
 
-        # Execute the graph
+        # Execute the graph with retry
         inputs: SimpleState = {
             "messages": [HumanMessage(content=user_prompt)]
         }
-        result = await graph.ainvoke(inputs)
+
+        async def execute_graph():
+            return await graph.ainvoke(inputs)
+
+        try:
+            result = await retry_with_backoff(
+                coro_factory=execute_graph,
+                max_retries=3,
+                backoff_config=DEFAULT_BACKOFF_CONFIG,
+                retryable_exceptions=RETRYABLE_EXCEPTIONS,
+                operation_name="simple_agent pipeline",
+            )
+        except BackoffExhaustedError as e:
+            logger.error(f"Simple agent pipeline failed after retries: {e}")
+            # Return fallback response
+            return "I apologize, but I'm currently experiencing technical difficulties. Please try again.", 0
+        except CircuitOpenError as e:
+            logger.error(f"Circuit breaker open for simple agent: {e}")
+            return "Service temporarily unavailable. Please try again in a moment.", 0
 
         # Extract response
         response_message = result["messages"][-1]
@@ -92,6 +148,7 @@ class LangGraphRunner:
         user_prompt: str,
         context: dict[str, Any] | None = None,
         needs_moderation: bool = True,
+        max_retries: int = 3,
     ) -> tuple[str, int, AgentType]:
         """Run the multi-agent LangGraph pipeline.
 
@@ -101,6 +158,7 @@ class LangGraphRunner:
             user_prompt: User prompt text.
             context: Optional context for agent routing.
             needs_moderation: Whether to perform moderation check.
+            max_retries: Maximum number of retries on failure.
 
         Returns:
             Tuple of (response text, tokens used, agent type used).
@@ -121,8 +179,36 @@ class LangGraphRunner:
             needs_moderation=needs_moderation,
         )
 
-        # Execute the graph
-        result = await graph.ainvoke(initial_state)
+        # Define the graph execution function for retry wrapper
+        async def execute_graph():
+            return await graph.ainvoke(initial_state)
+
+        # Execute the graph with backoff retry
+        try:
+            result = await retry_with_backoff(
+                coro_factory=execute_graph,
+                max_retries=max_retries,
+                backoff_config=DEFAULT_BACKOFF_CONFIG,
+                retryable_exceptions=RETRYABLE_EXCEPTIONS,
+                operation_name="multi_agent pipeline",
+            )
+        except BackoffExhaustedError as e:
+            logger.error(f"Multi-agent pipeline failed after {e.attempts} attempts: {e}")
+            # Return fallback response
+            return (
+                "I apologize, but I'm currently experiencing technical difficulties. "
+                "Please try again in a moment or contact support if the issue persists.",
+                0,
+                AgentType.FALLBACK,
+            )
+        except CircuitOpenError as e:
+            logger.error(f"Circuit breaker open for multi-agent: {e}")
+            return (
+                "Service temporarily unavailable due to repeated failures. "
+                "Please try again later.",
+                0,
+                AgentType.FALLBACK,
+            )
 
         # Extract final response
         final_response = result.get("final_response")
@@ -259,6 +345,11 @@ class LangGraphRunner:
         Returns:
             The next node to route to.
         """
+        # Check for circuit breaker open - immediate fallback
+        if state.get("circuit_open"):
+            logger.warning("Circuit breaker open, routing to fallback")
+            return "fallback"
+
         # Check for errors
         if state.get("error"):
             retry_count = state.get("retry_count", 0)
@@ -293,9 +384,26 @@ class LangGraphRunner:
 
         llm = LLMFactory.create(config)
 
+        # Get circuit breaker for this LLM config
+        registry = CircuitBreakerRegistry.get_instance()
+        circuit = registry.get_or_create(
+            f"history-{config.name}",
+            CircuitBreakerConfig(
+                failure_threshold=5,
+                success_threshold=2,
+                timeout_seconds=60.0,
+            ),
+        )
+
         async def agent_node(state: SimpleState) -> dict:
-            messages = [SystemMessage(content=system_prompt)] + state["messages"]
-            response = await llm.ainvoke(messages)
+            messages_with_system = [SystemMessage(content=system_prompt)] + state["messages"]
+            response = await circuit.call(
+                with_timeout(
+                    llm.ainvoke(messages_with_system),
+                    timeout_seconds=config.timeout_seconds,
+                    operation="history_agent LLM call",
+                )
+            )
             return {"messages": [response]}
 
         workflow = StateGraph(SimpleState)
@@ -315,7 +423,22 @@ class LangGraphRunner:
             # Add other role types as needed
 
         inputs: SimpleState = {"messages": langchain_messages}
-        result = await graph.ainvoke(inputs)
+
+        # Execute with retry
+        async def execute_graph():
+            return await graph.ainvoke(inputs)
+
+        try:
+            result = await retry_with_backoff(
+                coro_factory=execute_graph,
+                max_retries=3,
+                backoff_config=DEFAULT_BACKOFF_CONFIG,
+                retryable_exceptions=RETRYABLE_EXCEPTIONS,
+                operation_name="history_agent pipeline",
+            )
+        except (BackoffExhaustedError, CircuitOpenError) as e:
+            logger.error(f"History agent pipeline failed: {e}")
+            return "I apologize, but I'm currently experiencing technical difficulties. Please try again.", 0
 
         response_message = result["messages"][-1]
         response_text = response_message.content

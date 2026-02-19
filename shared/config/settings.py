@@ -55,6 +55,23 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
 
+    # LLM Resilience Settings
+    llm_default_timeout_seconds: int = 120  # Default timeout for LLM calls
+    llm_max_retries: int = 3  # Max retries for LLM calls
+    llm_retry_initial_delay: float = 1.0  # Initial delay before first retry
+    llm_retry_max_delay: float = 60.0  # Maximum delay between retries
+    llm_retry_multiplier: float = 2.0  # Exponential backoff multiplier
+
+    # Circuit Breaker Settings
+    circuit_breaker_failure_threshold: int = 5  # Failures before opening circuit
+    circuit_breaker_success_threshold: int = 2  # Successes in half-open to close
+    circuit_breaker_timeout_seconds: float = 60.0  # Time before attempting half-open
+
+    # Job Retry Settings
+    job_default_max_retries: int = 3  # Default max retries for failed jobs
+    job_retry_delay_min: float = 5.0  # Minimum delay before job retry
+    job_retry_delay_max: float = 300.0  # Maximum delay before job retry
+
     # WAHA (WhatsApp HTTP API) Configuration
     waha_server_url: str = Field(default="http://localhost:3000")
     waha_api_key: str | None = None
