@@ -72,6 +72,8 @@ services/gateway/src/gateway/
 ├── infrastructure/
 │   ├── persistence/             # SQLAlchemy repository impl
 │   ├── messaging/               # RabbitMQ publisher
+│   │   ├── rabbitmq_publisher.py
+│   │   └── delayed_publisher.py # Delayed retry scheduling
 │   └── cache/                   # Redis client
 ├── crm/                         # CRM context module (NEW)
 │   ├── __init__.py
@@ -110,7 +112,15 @@ services/llm-worker/src/llm_worker/
 │   └── dto/processing_dto.py
 ├── infrastructure/
 │   ├── persistence/             # Repository implementations
-│   ├── llm/                     # LLMFactory, LangGraphRunner, AgentNodes, AgentState
+│   ├── llm/                     # LLM infrastructure
+│   │   ├── llm_factory.py       # Creates LangChain models
+│   │   ├── langgraph_runner.py  # Executes AI pipelines
+│   │   ├── agent_nodes.py       # Multi-agent node implementations
+│   │   ├── agent_state.py       # AgentState TypedDict
+│   │   ├── timeout.py           # Timeout wrapper
+│   │   ├── response_validator.py # Response quality validation
+│   │   ├── backoff.py           # Exponential backoff retry
+│   │   └── circuit_breaker.py   # Circuit breaker pattern
 │   ├── messaging/               # RabbitMQ consumer
 │   └── cache/                   # Redis client
 └── interface/
@@ -462,6 +472,173 @@ Individual agent implementations in `infrastructure/llm/agent_nodes.py`:
 
 ---
 
+## LLM Worker Resilience
+
+The LLM Worker implements comprehensive resilience patterns to handle LLM failures gracefully:
+
+### Resilience Architecture
+
+```
+Message Handler ──> Processing Service ──> LangGraph Runner
+        │                   │                    │
+        │                   │                    │
+        ▼                   ▼                    ▼
+  Circuit Check      Retry Coordination    Backoff Retry
+        │                   │                    │
+        │                   │                    ▼
+        │                   │              Agent Nodes
+        │                   │                    │
+        │                   │              ┌─────┴─────┐
+        │                   │              ▼           ▼
+        │                   │         Timeout     Circuit
+        │                   │         Wrapper    Breaker
+        │                   │              │           │
+        │                   │              └─────┬─────┘
+        │                   │                    ▼
+        │                   │               LLM Call
+        │                   │                    │
+        │                   │              Response
+        │                   │              Validator
+        │                   │                    │
+        ▼                   ▼                    ▼
+   Schedule Retry <───── Result ────────────> Success/Retry/Fail
+```
+
+### Resilience Utilities
+
+Located in `infrastructure/llm/`:
+
+| File | Purpose |
+|------|---------|
+| `timeout.py` | `with_timeout()` wrapper using `asyncio.wait_for()` |
+| `response_validator.py` | `validate_response()` for quality checks |
+| `backoff.py` | `retry_with_backoff()` with exponential delay and jitter |
+| `circuit_breaker.py` | `CircuitBreaker` pattern with CLOSED/OPEN/HALF_OPEN states |
+
+### Timeout Implementation
+
+```python
+# infrastructure/llm/timeout.py
+async def with_timeout(coro, timeout_seconds, operation="LLM call"):
+    try:
+        return await asyncio.wait_for(coro, timeout=timeout_seconds)
+    except asyncio.TimeoutError:
+        raise LLMTimeoutError(timeout_seconds, operation)
+```
+
+### Response Validation
+
+```python
+# infrastructure/llm/response_validator.py
+class ResponseQuality(Enum):
+    VALID = "valid"
+    EMPTY = "empty"
+    WHITESPACE_ONLY = "whitespace_only"
+    TOO_SHORT = "too_short"
+    ERROR_INDICATOR = "error_indicator"
+
+def validate_response(response: str | None, min_length: int = 10) -> ValidationResult:
+    # Checks for None, empty, whitespace, too short, error patterns
+```
+
+### Exponential Backoff
+
+```python
+# infrastructure/llm/backoff.py
+@dataclass(frozen=True)
+class BackoffConfig:
+    initial_delay: float = 1.0
+    max_delay: float = 60.0
+    multiplier: float = 2.0
+    jitter_factor: float = 0.1
+
+async def retry_with_backoff(
+    coro_factory,  # Callable that returns awaitable
+    max_retries: int = 3,
+    backoff_config: BackoffConfig | None = None,
+    retryable_exceptions: tuple | None = None,
+) -> T:
+    # Retries with exponential backoff + jitter
+```
+
+### Circuit Breaker
+
+```python
+# infrastructure/llm/circuit_breaker.py
+class CircuitState(Enum):
+    CLOSED = "closed"      # Normal operation
+    OPEN = "open"          # Rejecting requests
+    HALF_OPEN = "half_open"  # Testing recovery
+
+class CircuitBreaker:
+    async def call(self, coro: Awaitable[T]) -> T:
+        # Executes through circuit breaker
+
+class CircuitBreakerRegistry:
+    # Global registry for circuit breakers by LLM config name
+    def get_or_create(self, name: str, config: CircuitBreakerConfig | None = None) -> CircuitBreaker
+```
+
+### Job-Level Retry
+
+Jobs can be retried at the message queue level:
+
+```python
+# domain/entities/job.py
+class Job:
+    _max_retries: int = 3
+    _retry_count: int = 0
+    _next_retry_at: datetime | None = None
+
+    @property
+    def can_retry(self) -> bool:
+        return self._retry_count < self._max_retries
+
+    def mark_for_retry(self, delay_seconds: float) -> None:
+        self._status = JobStatus.RETRYING
+        self._retry_count += 1
+        self._next_retry_at = datetime.utcnow() + timedelta(seconds=delay_seconds)
+
+# domain/value_objects/job_status.py
+class JobStatus(str, Enum):
+    QUEUED = "QUEUED"
+    PROCESSING = "PROCESSING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    RETRYING = "RETRYING"  # NEW: Intermediate state for retry scheduling
+```
+
+### Delayed Task Publisher
+
+Uses RabbitMQ dead-letter exchange for delayed retries:
+
+```python
+# gateway/infrastructure/messaging/delayed_publisher.py
+class DelayedTaskPublisher:
+    async def schedule_retry(self, job_id: str, message: dict, delay_seconds: float):
+        # Creates delay queue with TTL that dead-letters to main task queue
+        delay_queue_name = f"{self._task_queue}.delay.{delay_ms}ms"
+        await self._channel.declare_queue(
+            delay_queue_name,
+            durable=True,
+            arguments={
+                "x-message-ttl": delay_ms,
+                "x-dead-letter-exchange": "",
+                "x-dead-letter-routing-key": self._task_queue,
+            },
+        )
+```
+
+### Retry Flow
+
+```
+QUEUED → PROCESSING → RETRYING → QUEUED (retry) → PROCESSING → ...
+                        │
+                        └──(max retries exceeded)──> FAILED
+```
+
+---
+
 ## Database Configuration
 
 PostgreSQL with asyncpg driver:
@@ -541,6 +718,15 @@ GitHub Actions workflow at `.github/workflows/docker.yml`:
 | `MIDTRANS_SERVER_KEY` | CRM | Midtrans server key |
 | `MIDTRANS_IS_PRODUCTION` | CRM | Midtrans production mode |
 | `CONVERSATION_TTL` | CRM | Conversation cache TTL (seconds) |
+| **LLM Resilience** | | |
+| `LLM_DEFAULT_TIMEOUT_SECONDS` | LLM Worker | Default timeout for LLM calls (default: 120) |
+| `LLM_MAX_RETRIES` | LLM Worker | Max retry attempts per call (default: 3) |
+| `LLM_RETRY_INITIAL_DELAY` | LLM Worker | Initial backoff delay in seconds (default: 1.0) |
+| `LLM_RETRY_MAX_DELAY` | LLM Worker | Maximum backoff delay cap (default: 60.0) |
+| `CIRCUIT_BREAKER_FAILURE_THRESHOLD` | LLM Worker | Failures before circuit opens (default: 5) |
+| `CIRCUIT_BREAKER_SUCCESS_THRESHOLD` | LLM Worker | Successes to close circuit (default: 2) |
+| `CIRCUIT_BREAKER_TIMEOUT_SECONDS` | LLM Worker | Circuit open duration (default: 60.0) |
+| `JOB_DEFAULT_MAX_RETRIES` | Gateway | Max job-level retries (default: 3) |
 
 API keys are referenced by name in `llm_configs.api_key_env` and resolved at runtime.
 
@@ -605,6 +791,28 @@ docker-compose up --scale llm-worker=4
 python -m commerce_agent.worker
 ```
 
+### Troubleshoot LLM worker resilience issues
+
+1. **Check circuit breaker state** — If jobs are failing with `CircuitOpenError`, the circuit breaker is protecting against cascading failures
+2. **Check timeout settings** — Increase `LLM_DEFAULT_TIMEOUT_SECONDS` if jobs are timing out
+3. **Check retry logs** — Look for "Scheduling retry" messages in logs
+4. **Check job retry count** — Query `jobs` table for `retry_count` and `next_retry_at`
+5. **Reset circuit breaker** — Restart the LLM worker service to reset circuit breaker state
+
+```sql
+-- Check jobs with retry status
+SELECT id, status, retry_count, next_retry_at, error
+FROM jobs
+WHERE status IN ('RETRYING', 'FAILED')
+ORDER BY created_at DESC;
+
+-- Check jobs scheduled for retry
+SELECT id, retry_count, next_retry_at
+FROM jobs
+WHERE next_retry_at IS NOT NULL
+ORDER BY next_retry_at;
+```
+
 ---
 
 ## Notes & Gotchas
@@ -616,6 +824,9 @@ python -m commerce_agent.worker
 - **Shared kernel is minimal** — only truly cross-cutting concerns (events, exceptions, config)
 - **Redis is ephemeral** — job results may expire based on TTL
 - **Pydantic v2** — use `model_config` instead of `Config` class
+- **Circuit breaker is in-memory** — state is lost on worker restart (by design)
+- **Retry delays use RabbitMQ DLX** — DelayedTaskPublisher creates delay queues with TTL
+- **Job RETRYING status** — Jobs in RETRYING state should transition to QUEUED or FAILED
 
 ---
 
@@ -626,12 +837,14 @@ python -m commerce_agent.worker
 | CI/CD workflow | `.github/workflows/docker.yml` |
 | **Gateway Service** | |
 | Job entity | `services/gateway/src/gateway/domain/entities/job.py` |
+| Job status | `services/gateway/src/gateway/domain/value_objects/job_status.py` |
 | Job service | `services/gateway/src/gateway/application/services/job_service.py` |
 | API routes | `services/gateway/src/gateway/interface/routes/api.py` |
 | CRM routes | `services/gateway/src/gateway/interface/routes/crm_routes.py` |
 | CRM dependencies | `services/gateway/src/gateway/crm/dependencies.py` |
 | CRM publisher | `services/gateway/src/gateway/crm/publishers.py` |
 | CRM controllers | `services/gateway/src/gateway/interface/controllers/crm/` |
+| Delayed task publisher | `services/gateway/src/gateway/infrastructure/messaging/delayed_publisher.py` |
 | **LLM Worker Service** | |
 | LLM config entity | `services/llm-worker/src/llm_worker/domain/entities/llm_config.py` |
 | Agent config entity | `services/llm-worker/src/llm_worker/domain/entities/agent_config.py` |
@@ -641,6 +854,12 @@ python -m commerce_agent.worker
 | Agent nodes | `services/llm-worker/src/llm_worker/infrastructure/llm/agent_nodes.py` |
 | Processing service | `services/llm-worker/src/llm_worker/application/services/processing_service.py` |
 | Processing DTOs | `services/llm-worker/src/llm_worker/application/dto/processing_dto.py` |
+| Message handler | `services/llm-worker/src/llm_worker/interface/handlers/message_handler.py` |
+| **Resilience Utilities** | |
+| Timeout wrapper | `services/llm-worker/src/llm_worker/infrastructure/llm/timeout.py` |
+| Response validator | `services/llm-worker/src/llm_worker/infrastructure/llm/response_validator.py` |
+| Backoff retry | `services/llm-worker/src/llm_worker/infrastructure/llm/backoff.py` |
+| Circuit breaker | `services/llm-worker/src/llm_worker/infrastructure/llm/circuit_breaker.py` |
 | **Commerce Agent Worker** | |
 | Worker entry point | `services/commerce-agent/src/commerce_agent/worker.py` |
 | Tenant entity | `services/commerce-agent/src/commerce_agent/domain/entities/tenant.py` |
@@ -662,3 +881,4 @@ python -m commerce_agent.worker
 | **Shared** | |
 | Shared settings | `shared/config/settings.py` |
 | Database init | `infra/docker/postgres/init.sql` |
+| Resilience migration | `infra/docker/postgres/migrations/002_add_resilience_columns.sql` |

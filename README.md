@@ -16,6 +16,7 @@ A scalable AI processing platform built with **Domain-Driven Design (DDD)** arch
 - **Payment Integration** — Midtrans and Xendit payment gateway support
 - **Customer Service Tools** — Labels/Tagging, Quick Replies, Ticket System for support management
 - **High Performance** — SQLAlchemy 2.0 with asyncpg, Redis caching, connection pooling
+- **LLM Resilience** — Timeout handling, exponential backoff, circuit breaker, job-level retry
 
 ---
 
@@ -106,7 +107,7 @@ ai-platform/
 │   │       │   └── dto/job_dto.py
 │   │       ├── infrastructure/
 │   │       │   ├── persistence/    # SQLAlchemy repos
-│   │       │   ├── messaging/      # RabbitMQ publisher
+│   │       │   ├── messaging/      # RabbitMQ publisher, DelayedTaskPublisher
 │   │       │   └── cache/          # Redis client
 │   │       ├── crm/                # CRM context (DI, publishers)
 │   │       │   ├── dependencies.py # DI factories for CRM repos/services
@@ -142,6 +143,11 @@ ai-platform/
 │   │       ├── infrastructure/
 │   │       │   ├── persistence/    # Repository implementations
 │   │       │   ├── llm/            # LLMFactory, LangGraphRunner, AgentNodes, AgentState
+│   │       │   │   ├── timeout.py           # Timeout wrapper
+│   │       │   │   ├── response_validator.py # Response validation
+│   │       │   │   ├── backoff.py           # Exponential backoff
+│   │       │   │   ├── circuit_breaker.py   # Circuit breaker pattern
+│   │       │   │   └── ...
 │   │       │   ├── messaging/      # RabbitMQ consumer
 │   │       │   └── cache/          # Redis client
 │   │       └── interface/
@@ -181,7 +187,10 @@ ai-platform/
 │
 └── infra/
     └── docker/
-        ├── postgres/init.sql
+        ├── postgres/
+        │   ├── init.sql
+        │   └── migrations/
+        │       └── 002_add_resilience_columns.sql
         └── rabbitmq/definitions.json
 ```
 
@@ -283,7 +292,10 @@ curl "http://localhost:8000/health"
 **Job Aggregate:**
 - `JobId` — Unique identifier (UUID)
 - `Prompt` — User input with validation
-- `JobStatus` — QUEUED → PROCESSING → COMPLETED | FAILED
+- `JobStatus` — QUEUED → PROCESSING → COMPLETED | FAILED | RETRYING
+- `max_retries` — Maximum retry attempts (default: 3)
+- `retry_count` — Current retry attempt
+- `next_retry_at` — Scheduled time for next retry
 - Events: `JobCreated`, `JobStatusChanged`, `JobCompleted`, `JobFailed`
 
 ### LLM Worker Bounded Context
@@ -360,6 +372,129 @@ result = await processing_service.process_multi_agent(
     needs_moderation=True,
 )
 ```
+
+---
+
+## LLM Worker Resilience
+
+The LLM Worker implements comprehensive resilience patterns to handle LLM failures gracefully:
+
+```
+                    ┌──────────────────────────────────────┐
+                    │           LLM WORKER                 │
+                    │                                      │
+Message ─────────>  │  ┌─────────────────────────────┐    │
+(from queue)        │  │     Message Handler         │    │
+                    │  │  - Receive message          │    │
+                    │  │  - Check circuit breaker    │    │
+                    │  └──────────┬──────────────────┘    │
+                    │             │                        │
+                    │  ┌──────────▼──────────┐            │
+                    │  │  Processing Service  │            │
+                    │  │  - Orchestrate flow  │            │
+                    │  │  - Handle retries    │            │
+                    │  └──────────┬──────────┘            │
+                    │             │                        │
+                    │  ┌──────────▼──────────┐            │
+                    │  │   LangGraph Runner   │            │
+                    │  │  - Multi-agent flow  │            │
+                    │  │  - Backoff retry     │            │
+                    │  └──────────┬──────────┘            │
+                    │             │                        │
+                    │  ┌──────────▼──────────┐            │
+                    │  │    Agent Nodes      │            │
+                    │  │  ┌──────────────┐   │            │
+                    │  │  │   TIMEOUT    │   │            │
+                    │  │  │   WRAPPER    │   │            │
+                    │  │  └──────┬───────┘   │            │
+                    │  │         │           │            │
+                    │  │  ┌──────▼───────┐   │            │
+                    │  │  │   CIRCUIT    │   │            │
+                    │  │  │   BREAKER    │   │            │
+                    │  │  └──────┬───────┘   │            │
+                    │  │         │           │            │
+                    │  │  ┌──────▼───────┐   │            │
+                    │  │  │    LLM       │   │            │
+                    │  │  │   ainvoke()  │   │            │
+                    │  │  └──────────────┘   │            │
+                    │  │  - Validate response│            │
+                    │  └─────────────────────┘            │
+                    └──────────────────────────────────────┘
+                                     │
+                    ┌────────────────▼────────────────┐
+                    │           RESULT                 │
+                    │  - Success → Cache result        │
+                    │  - Retryable → Schedule retry    │
+                    │  - Failed → Mark job FAILED      │
+                    └─────────────────────────────────┘
+```
+
+### Resilience Features
+
+| Feature | Description |
+|---------|-------------|
+| **Timeout Wrapper** | Wraps LLM calls with `asyncio.wait_for()` to prevent hanging |
+| **Response Validation** | Validates responses for empty/whitespace/error indicators |
+| **Exponential Backoff** | Retry delays with jitter to prevent thundering herd |
+| **Circuit Breaker** | Prevents cascading failures during LLM outages |
+| **Job-Level Retry** | Automatic retry with delayed re-queue via RabbitMQ DLX |
+
+### Configuration
+
+Configure resilience settings via environment variables:
+
+```bash
+# LLM Resilience Settings
+LLM_DEFAULT_TIMEOUT_SECONDS=120    # Default timeout for LLM calls
+LLM_MAX_RETRIES=3                  # Max retry attempts per call
+LLM_RETRY_INITIAL_DELAY=1.0        # Initial delay in seconds
+LLM_RETRY_MAX_DELAY=60.0           # Maximum delay cap
+
+# Circuit Breaker Settings
+CIRCUIT_BREAKER_FAILURE_THRESHOLD=5  # Failures before opening
+CIRCUIT_BREAKER_SUCCESS_THRESHOLD=2  # Successes to close
+CIRCUIT_BREAKER_TIMEOUT_SECONDS=60.0  # Time before half-open
+
+# Job Retry Settings
+JOB_DEFAULT_MAX_RETRIES=3          # Max job-level retries
+JOB_RETRY_DELAY_MIN=5.0            # Minimum retry delay
+JOB_RETRY_DELAY_MAX=300.0          # Maximum retry delay (5 min)
+```
+
+### Circuit Breaker States
+
+```
+     ┌──────────────────────────────────────────┐
+     │                                          │
+     ▼                                          │
+  CLOSED ────(5 failures)───> OPEN ────(60s)───> HALF_OPEN
+     │                          │                    │
+     │                          │                    │
+     │<──────(2 successes)──────┘<───(failure)──────┘
+     │
+   Normal
+  Operation
+```
+
+- **CLOSED**: Normal operation, requests pass through
+- **OPEN**: Requests rejected immediately, prevents cascading failures
+- **HALF_OPEN**: Testing recovery, limited requests allowed
+
+### Job Retry Flow
+
+```
+QUEUED → PROCESSING → RETRYING → QUEUED (retry) → PROCESSING → ...
+                        │
+                        └──(max retries)──> FAILED
+```
+
+### Response Validation
+
+The validator checks for:
+- `None` or empty responses
+- Whitespace-only responses
+- Responses below minimum length threshold
+- Error indicator patterns (e.g., "I cannot", "error occurred")
 
 ---
 
@@ -457,7 +592,24 @@ CREATE TABLE llm_configs (
     api_key_env VARCHAR(255) NOT NULL,
     temperature REAL DEFAULT 0.7,
     max_tokens INTEGER DEFAULT 4096,
+    timeout_seconds INTEGER DEFAULT 120,  -- LLM call timeout
     is_active BOOLEAN DEFAULT TRUE
+);
+
+-- Jobs (with retry support)
+CREATE TABLE jobs (
+    id VARCHAR(36) PRIMARY KEY,
+    prompt TEXT NOT NULL,
+    config_name VARCHAR(255) NOT NULL,
+    template_name VARCHAR(255) NOT NULL,
+    status VARCHAR(50) DEFAULT 'QUEUED',  -- QUEUED, PROCESSING, COMPLETED, FAILED, RETRYING
+    result TEXT,
+    error TEXT,
+    max_retries INTEGER DEFAULT 3,
+    retry_count INTEGER DEFAULT 0,
+    next_retry_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Prompt Templates
@@ -668,3 +820,12 @@ docker push your-username/ai-platform-commerce-agent:latest
 | `MIDTRANS_SERVER_KEY` | Midtrans server key |
 | `MIDTRANS_IS_PRODUCTION` | Use Midtrans production mode |
 | `CONVERSATION_TTL` | Conversation cache TTL (seconds) |
+| **LLM Resilience** | |
+| `LLM_DEFAULT_TIMEOUT_SECONDS` | Default timeout for LLM calls (default: 120) |
+| `LLM_MAX_RETRIES` | Max retry attempts per LLM call (default: 3) |
+| `LLM_RETRY_INITIAL_DELAY` | Initial backoff delay in seconds (default: 1.0) |
+| `LLM_RETRY_MAX_DELAY` | Maximum backoff delay cap (default: 60.0) |
+| `CIRCUIT_BREAKER_FAILURE_THRESHOLD` | Failures before circuit opens (default: 5) |
+| `CIRCUIT_BREAKER_SUCCESS_THRESHOLD` | Successes to close circuit (default: 2) |
+| `CIRCUIT_BREAKER_TIMEOUT_SECONDS` | Circuit open duration (default: 60.0) |
+| `JOB_DEFAULT_MAX_RETRIES` | Max job-level retries (default: 3) |
