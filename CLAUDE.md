@@ -73,12 +73,12 @@ services/gateway/src/gateway/
 
 ### AI Engine Context
 
-**Aggregate Roots:** `LLMConfig`, `PromptTemplate`
+**Aggregate Roots:** `LLMConfig`, `PromptTemplate`, `AgentConfig`
 
 ```
 services/ai_engine/src/ai_engine/
 ├── domain/
-│   ├── entities/                # LLMConfig, PromptTemplate
+│   ├── entities/                # LLMConfig, PromptTemplate, AgentConfig
 │   ├── value_objects/           # Provider, ModelName, Temperature
 │   ├── services/llm_selector.py # Domain service for LLM selection
 │   └── repositories/            # Repository interfaces
@@ -87,7 +87,7 @@ services/ai_engine/src/ai_engine/
 │   └── dto/processing_dto.py
 ├── infrastructure/
 │   ├── persistence/             # Repository implementations
-│   ├── llm/                     # LLMFactory, LangGraphRunner
+│   ├── llm/                     # LLMFactory, LangGraphRunner, AgentNodes, AgentState
 │   ├── messaging/               # RabbitMQ consumer
 │   └── cache/                   # Redis client
 └── interface/
@@ -239,6 +239,91 @@ class LangGraphRunner:
 
 ---
 
+## Multi-Agent Architecture
+
+The AI Engine supports a multi-agent system with specialized agents and intelligent routing:
+
+### Agent Types
+
+| Type | Purpose | Template Name |
+|------|---------|---------------|
+| `MAIN` | Primary response handler | `main-agent` |
+| `FALLBACK` | Error recovery and moderation violations | `fallback-agent` |
+| `FOLLOWUP` | Conversation continuity | `followup-agent` |
+| `MODERATION` | Content policy validation | `moderation-agent` |
+
+### AgentState
+
+Extended state for multi-agent workflows:
+
+```python
+# infrastructure/llm/agent_state.py
+class AgentState(TypedDict):
+    messages: Annotated[list, add_messages]
+    agent_type: Literal["main", "fallback", "followup", "moderation"]
+    context: dict[str, Any]
+    needs_moderation: bool
+    moderation_result: dict[str, Any] | None
+    retry_count: int
+    final_response: str | None
+    error: str | None
+```
+
+### Agent Workflow
+
+```
+START → moderation_node → router_node
+         ↓
+    [Conditional routing]
+         ↓
+    ┌────┴────┬────────────┐
+    ↓         ↓            ↓
+main_agent  followup  fallback_agent
+    ↓         ↓            ↓
+ [success?]   END          END
+    ↓
+ fallback (on failure)
+    ↓
+   END
+```
+
+### Multi-Agent Processing
+
+```python
+# application/services/processing_service.py
+class ProcessingService:
+    async def process_multi_agent(
+        self,
+        request: ProcessingRequest,
+        context: dict[str, Any] | None = None,
+        needs_moderation: bool = True,
+    ) -> ProcessingResult:
+        # Load agent configurations
+        agent_configs = await self._load_agent_configs(request.config_name)
+
+        # Execute multi-agent pipeline
+        result, tokens, agent_type = await self._llm_runner.run_multi_agent(
+            config=config,
+            agent_configs=agent_configs,
+            user_prompt=request.prompt,
+            context=context,
+            needs_moderation=needs_moderation,
+        )
+        return ProcessingResult(...)
+```
+
+### Agent Nodes
+
+Individual agent implementations in `infrastructure/llm/agent_nodes.py`:
+
+- `moderation_node()` — Content policy checking
+- `router_node()` — Intelligent agent routing
+- `main_agent_node()` — Primary processing
+- `fallback_agent_node()` — Error recovery
+- `followup_agent_node()` — Conversation continuation
+
+---
+
 ## Database Configuration
 
 PostgreSQL with asyncpg driver:
@@ -328,6 +413,14 @@ Insert a row into `prompt_templates` table. No code change needed.
 
 ### Add a new agent node
 
+1. Define agent type in `AgentType` enum (`domain/entities/agent_config.py`)
+2. Create node function in `infrastructure/llm/agent_nodes.py`
+3. Add prompt template to `prompt_templates` table
+4. Update `LangGraphRunner._build_multi_agent_workflow()` to include the node
+5. Add routing logic in `_route_after_router()` or `_route_after_main()`
+
+### Add a new agent node
+
 Extend `AgentState` and modify `LangGraphRunner.run()` to add nodes/edges.
 
 ### Scale workers
@@ -359,8 +452,12 @@ docker-compose up --scale ai-engine=4
 | Job service | `services/gateway/src/gateway/application/services/job_service.py` |
 | API routes | `services/gateway/src/gateway/interface/routes/api.py` |
 | LLM config entity | `services/ai_engine/src/ai_engine/domain/entities/llm_config.py` |
+| Agent config entity | `services/ai_engine/src/ai_engine/domain/entities/agent_config.py` |
 | LLM factory | `services/ai_engine/src/ai_engine/infrastructure/llm/llm_factory.py` |
 | LangGraph runner | `services/ai_engine/src/ai_engine/infrastructure/llm/langgraph_runner.py` |
+| Agent state | `services/ai_engine/src/ai_engine/infrastructure/llm/agent_state.py` |
+| Agent nodes | `services/ai_engine/src/ai_engine/infrastructure/llm/agent_nodes.py` |
 | Processing service | `services/ai_engine/src/ai_engine/application/services/processing_service.py` |
+| Processing DTOs | `services/ai_engine/src/ai_engine/application/dto/processing_dto.py` |
 | Shared settings | `shared/config/settings.py` |
 | Database init | `infra/docker/postgres/init.sql` |

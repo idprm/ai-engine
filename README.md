@@ -11,6 +11,7 @@ A scalable AI processing platform built with **Domain-Driven Design (DDD)** arch
 - **Asynchronous Processing** — RabbitMQ message broker for long-running AI tasks
 - **Dynamic Configuration** — LLM configs and prompt templates stored in PostgreSQL for runtime changes
 - **LangGraph Integration** — Stateful, multi-step agent workflows
+- **Multi-Agent Architecture** — Specialized agents (Main, Fallback, Followup, Moderation) with intelligent routing
 - **High Performance** — SQLAlchemy 2.0 with asyncpg, Redis caching, connection pooling
 
 ---
@@ -97,7 +98,7 @@ ai-platform/
 │       ├── pyproject.toml
 │       └── src/ai_engine/
 │           ├── domain/
-│           │   ├── entities/       # LLMConfig, PromptTemplate
+│           │   ├── entities/       # LLMConfig, PromptTemplate, AgentConfig
 │           │   ├── value_objects/  # Provider, ModelName, Temperature
 │           │   ├── services/       # LLMSelector
 │           │   └── repositories/   # Repository interfaces
@@ -106,7 +107,7 @@ ai-platform/
 │           │   └── dto/processing_dto.py
 │           ├── infrastructure/
 │           │   ├── persistence/    # Repository implementations
-│           │   ├── llm/            # LLMFactory, LangGraphRunner
+│           │   ├── llm/            # LLMFactory, LangGraphRunner, AgentNodes, AgentState
 │           │   ├── messaging/      # RabbitMQ consumer
 │           │   └── cache/          # Redis client
 │           └── interface/
@@ -229,6 +230,71 @@ curl "http://localhost:8000/health"
 **PromptTemplate Aggregate:**
 - Name and content with optional variables
 
+**AgentConfig Entity:**
+- `AgentType` — main | fallback | followup | moderation
+- System prompt and LLM configuration per agent
+- Temperature, max_tokens, retry settings
+
+---
+
+## Multi-Agent Architecture
+
+The AI Engine supports a sophisticated multi-agent system with intelligent routing:
+
+```
+                    ┌─────────────────┐
+                    │  START          │
+                    └────────┬────────┘
+                             │
+                             ▼
+                    ┌─────────────────┐
+                    │ moderation_node │
+                    └────────┬────────┘
+                             │
+                             ▼
+                    ┌─────────────────┐
+                    │   router_node   │
+                    └────────┬────────┘
+                             │
+              ┌──────────────┼──────────────┐
+              │              │              │
+              ▼              ▼              ▼
+     ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
+     │ main_agent  │ │followup_    │ │ fallback_   │
+     │             │ │agent        │ │ agent       │
+     └──────┬──────┘ └──────┬──────┘ └──────┬──────┘
+            │               │               │
+            └───────────────┼───────────────┘
+                            │
+                            ▼
+                    ┌─────────────────┐
+                    │      END        │
+                    └─────────────────┘
+```
+
+### Agent Types
+
+| Agent | Purpose |
+|-------|---------|
+| **Main** | Primary response handler for standard queries |
+| **Fallback** | Handles errors and moderation violations |
+| **Followup** | Manages conversation continuity and depth |
+| **Moderation** | Content filtering and policy validation |
+
+### Usage
+
+```python
+# Single-agent (backward compatible)
+result = await processing_service.process(request)
+
+# Multi-agent pipeline
+result = await processing_service.process_multi_agent(
+    request=request,
+    context={"is_followup": False},
+    needs_moderation=True,
+)
+```
+
 ---
 
 ## Database Schema
@@ -253,6 +319,13 @@ CREATE TABLE prompt_templates (
     content TEXT NOT NULL,
     description TEXT
 );
+
+-- Agent Prompt Templates (multi-agent system)
+INSERT INTO prompt_templates (name, content, description) VALUES
+    ('main-agent', 'Primary agent system prompt...', 'Primary agent for handling user requests'),
+    ('fallback-agent', 'Fallback agent system prompt...', 'Fallback agent for error recovery'),
+    ('followup-agent', 'Followup agent system prompt...', 'Agent for conversation continuity'),
+    ('moderation-agent', 'Moderation agent system prompt...', 'Agent for content moderation');
 ```
 
 ---
