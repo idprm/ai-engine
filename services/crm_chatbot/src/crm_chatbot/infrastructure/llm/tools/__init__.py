@@ -24,6 +24,9 @@ from crm_chatbot.infrastructure.llm.tools.payment_tools import (
 from crm_chatbot.infrastructure.llm.tools.tool_registry import (
     get_all_tools,
     get_tools_by_category,
+    get_tools_for_conversation_state,
+    get_tool_executor,
+    register_tool_executor,
 )
 
 __all__ = [
@@ -47,4 +50,7 @@ __all__ = [
     # Registry
     "get_all_tools",
     "get_tools_by_category",
+    "get_tools_for_conversation_state",
+    "get_tool_executor",
+    "register_tool_executor",
 ]

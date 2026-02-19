@@ -19,6 +19,8 @@ from crm_chatbot.infrastructure.persistence.conversation_repository_impl import 
 from crm_chatbot.infrastructure.persistence.payment_repository_impl import PaymentRepositoryImpl
 from crm_chatbot.infrastructure.messaging.crm_task_consumer import CRMTaskConsumer
 from crm_chatbot.infrastructure.messaging.wa_response_publisher import WAResponsePublisher
+from crm_chatbot.infrastructure.messaging.buffer_flush_worker import BufferFlushWorker
+from crm_chatbot.infrastructure.cache.message_buffer import MessageBuffer
 from crm_chatbot.infrastructure.payment.midtrans_client import MidtransClient
 from crm_chatbot.infrastructure.llm import CRMLangGraphRunner
 from crm_chatbot.application.services import (
@@ -36,12 +38,14 @@ logger = logging.getLogger(__name__)
 redis_client: Redis | None = None
 task_consumer: CRMTaskConsumer | None = None
 orchestrator: ChatbotOrchestrator | None = None
+message_handler: WAMessageHandler | None = None
+buffer_flush_worker: BufferFlushWorker | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
-    global redis_client, task_consumer, orchestrator
+    global redis_client, task_consumer, orchestrator, message_handler, buffer_flush_worker
 
     logger.info("Starting CRM Chatbot service...")
 
@@ -102,8 +106,34 @@ async def lifespan(app: FastAPI):
     )
     await orchestrator.start()
 
-    # Initialize message handler
-    message_handler = WAMessageHandler(orchestrator)
+    # Initialize message buffer for batching WhatsApp messages
+    message_buffer = MessageBuffer(
+        redis=redis_client,
+        initial_delay=getattr(settings, "message_buffer_initial_delay", 2.0),
+        max_delay=getattr(settings, "message_buffer_max_delay", 10.0),
+    )
+    logger.info("Message buffer initialized")
+
+    # Initialize message handler with buffering
+    message_handler = WAMessageHandler(
+        orchestrator=orchestrator,
+        message_buffer=message_buffer,
+    )
+
+    # Initialize buffer flush worker
+    async def process_buffered_message(chat_id: str, message: str, metadata: dict):
+        """Process a buffered message after flushing."""
+        await message_handler.handle_buffered_message(chat_id, message, metadata)
+
+    buffer_flush_worker = BufferFlushWorker(
+        message_buffer=message_buffer,
+        message_processor=process_buffered_message,
+        check_interval=getattr(settings, "buffer_flush_interval", 0.5),
+    )
+
+    # Start buffer flush worker as background task
+    buffer_flush_task = buffer_flush_worker.start_as_task()
+    logger.info("Buffer flush worker started")
 
     # Initialize and start consumer
     task_consumer = CRMTaskConsumer(
@@ -117,6 +147,9 @@ async def lifespan(app: FastAPI):
 
     # Cleanup
     logger.info("Stopping CRM Chatbot service...")
+
+    if buffer_flush_worker:
+        await buffer_flush_worker.stop()
 
     if task_consumer:
         await task_consumer.stop()

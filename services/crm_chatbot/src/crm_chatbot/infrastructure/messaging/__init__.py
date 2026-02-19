@@ -2,8 +2,10 @@
 
 from crm_chatbot.infrastructure.messaging.crm_task_consumer import CRMTaskConsumer
 from crm_chatbot.infrastructure.messaging.wa_response_publisher import WAResponsePublisher
+from crm_chatbot.infrastructure.messaging.buffer_flush_worker import BufferFlushWorker
 
 __all__ = [
     "CRMTaskConsumer",
     "WAResponsePublisher",
+    "BufferFlushWorker",
 ]
