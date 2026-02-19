@@ -46,7 +46,12 @@ ON CONFLICT (name) DO NOTHING;
 INSERT INTO prompt_templates (name, content, description) VALUES
     ('default-assistant', 'You are a helpful AI assistant. Please provide clear, accurate, and thoughtful responses.', 'Default assistant system prompt'),
     ('code-assistant', 'You are an expert software developer. Help with coding tasks, debugging, and best practices. Be concise and practical.', 'Code-focused assistant prompt'),
-    ('creative-writer', 'You are a creative writing assistant. Help with storytelling, content creation, and creative ideation.', 'Creative writing assistant prompt')
+    ('creative-writer', 'You are a creative writing assistant. Help with storytelling, content creation, and creative ideation.', 'Creative writing assistant prompt'),
+    -- Multi-agent system prompts
+    ('main-agent', 'You are a helpful AI assistant. Provide clear, accurate, and thoughtful responses. Be concise but thorough, and always aim to be helpful and informative.', 'Primary agent for handling user requests'),
+    ('fallback-agent', 'You are a backup assistant. Provide simple, safe, and helpful responses when the primary system encounters issues. Be polite and offer to help with alternative approaches.', 'Fallback agent for error recovery'),
+    ('followup-agent', 'You are a conversational assistant specialized in handling follow-up questions. Maintain context from previous messages and provide coherent, connected responses. Help users explore topics in depth.', 'Agent for conversation continuity'),
+    ('moderation-agent', 'You are a content moderation assistant. Analyze messages for potential policy violations including harassment, hate speech, self-harm, sexual content, violence, and spam. Respond with structured assessments.', 'Agent for content moderation')
 ON CONFLICT (name) DO NOTHING;
 
 -- Create update timestamp trigger function
