@@ -8,12 +8,16 @@ This file provides context and implementation details for AI coding assistants (
 
 This is a **Python monorepo** implementing a scalable AI processing platform using **Domain-Driven Design (DDD)** architecture. The services include:
 
-- **`services/gateway/`** — FastAPI service that accepts REST requests and enqueues jobs.
-- **`services/ai_engine/`** — Worker service that consumes jobs, runs LangGraph pipelines, and writes results.
-- **`services/waha_sender/`** — WhatsApp message sender service via WAHA API.
-- **`services/crm_chatbot/`** — Multi-tenant CRM chatbot for WhatsApp customer interactions.
+- **`services/gateway/`** — FastAPI service that handles ALL REST requests (including CRM routes) and enqueues jobs.
+- **`services/llm-worker/`** — Worker service that consumes jobs, runs LangGraph pipelines, and writes results.
+- **`services/messenger/`** — WhatsApp message sender service via WAHA API.
+- **`services/commerce-agent/`** — **Background worker only** - processes CRM tasks from queue, NO HTTP endpoints.
 
 They share code through **`shared/`**, the shared kernel containing cross-cutting concerns.
+
+### Important: Gateway-CRM Architecture
+
+> The Commerce Agent service has been refactored to a pure background worker. All HTTP routes (`/v1/crm/*`) are now served by the Gateway service. The Gateway imports CRM's domain, application, and infrastructure layers directly and publishes tasks to the `crm_tasks` queue for the CRM Worker to process.
 
 ---
 
@@ -53,6 +57,8 @@ This codebase follows classic 4-layer DDD with isolated bounded contexts:
 
 **Aggregate Root:** `Job`
 
+The Gateway service handles ALL HTTP endpoints, including CRM routes migrated from the Commerce Agent service.
+
 ```
 services/gateway/src/gateway/
 ├── domain/
@@ -67,18 +73,33 @@ services/gateway/src/gateway/
 │   ├── persistence/             # SQLAlchemy repository impl
 │   ├── messaging/               # RabbitMQ publisher
 │   └── cache/                   # Redis client
+├── crm/                         # CRM context module (NEW)
+│   ├── __init__.py
+│   ├── dependencies.py          # DI factories for CRM repos/services
+│   └── publishers.py            # CRMTaskPublisher for webhook queue
 └── interface/
-    ├── controllers/             # FastAPI route handlers
-    ├── routes/api.py            # Route definitions
+    ├── controllers/
+    │   ├── job_controller.py    # Job endpoints
+    │   ├── wa_controller.py     # WhatsApp endpoints
+    │   └── crm/                 # Migrated CRM controllers (NEW)
+    │       ├── tenant_controller.py
+    │       ├── product_controller.py
+    │       ├── order_controller.py
+    │       ├── webhook_controller.py
+    │       ├── label_controller.py
+    │       └── quick_reply_controller.py
+    ├── routes/
+    │   ├── api.py               # Main route definitions
+    │   └── crm_routes.py        # CRM route aggregator (NEW)
     └── schemas/                 # Pydantic request/response
 ```
 
-### AI Engine Context
+### LLM Worker Context
 
 **Aggregate Roots:** `LLMConfig`, `PromptTemplate`, `AgentConfig`
 
 ```
-services/ai_engine/src/ai_engine/
+services/llm-worker/src/llm_worker/
 ├── domain/
 │   ├── entities/                # LLMConfig, PromptTemplate, AgentConfig
 │   ├── value_objects/           # Provider, ModelName, Temperature
@@ -96,38 +117,85 @@ services/ai_engine/src/ai_engine/
     └── handlers/                # Message handlers
 ```
 
-### CRM Chatbot Context
+### Commerce Agent Context (Background Worker)
 
 **Aggregate Roots:** `Tenant`, `Customer`, `Product`, `Order`, `Conversation`, `Ticket`
 
+> **Note:** The Commerce Agent is now a **background worker only**. All HTTP controllers and routes have been moved to the Gateway service. This service consumes messages from the `crm_tasks` queue and processes them using LLM agents.
+
 ```
-services/crm_chatbot/src/crm_chatbot/
+services/commerce-agent/src/commerce_agent/
+├── worker.py                    # Worker entry point (NEW - main entry)
+├── main.py                      # DEPRECATED - use worker.py for production
 ├── domain/
 │   ├── entities/                # Tenant, Customer, Product, Order, Conversation, Payment
 │   │                            # Label, ConversationLabel, QuickReply, Ticket, TicketBoard, TicketTemplate
 │   ├── value_objects/           # TenantId, CustomerId, OrderStatus, Money, ConversationState
 │   │                            # LabelId, QuickReplyId, TicketId, TicketStatus, TicketPriority
 │   ├── events/                  # Domain events
-│   └── repositories/            # Repository interfaces
+│   └── repositories/            # Repository interfaces (implemented in infrastructure/)
 ├── application/
 │   ├── services/                # ChatbotOrchestrator, ConversationService, OrderService
-│   │                            # LabelService, QuickReplyService
-│   ├── dto/                     # Data transfer objects
+│   │                            # LabelService, QuickReplyService (imported by Gateway)
+│   ├── dto/                     # Data transfer objects (imported by Gateway)
 │   └── handlers/                # WAMessageHandler
 ├── infrastructure/
-│   ├── persistence/             # SQLAlchemy repository implementations
+│   ├── persistence/             # SQLAlchemy repository implementations (imported by Gateway)
 │   ├── messaging/               # RabbitMQ consumer/publisher
-│   ├── llm/                     # CRMLangGraphRunner, CRM agent tools (including label tools)
-│   ├── payment/                 # MidtransClient, XenditClient
+│   ├── llm/                     # CRMLangGraphRunner, CRM agent tools
+│   ├── payment/                 # MidtransClient, XenditClient (imported by Gateway)
 │   └── cache/                   # ConversationCache (Redis)
-└── interface/
-    ├── controllers/             # Tenant, Product, Order, Webhook, Label, QuickReply controllers
-    └── routes/api.py
+└── interface/                   # DEPRECATED - controllers moved to Gateway
 ```
 
 ### Customer Service Tools (Cekat.ai-like Features)
 
-The CRM Chatbot includes customer service management tools inspired by Cekat.ai:
+The Commerce Agent includes customer service management tools inspired by Cekat.ai:
+
+### Gateway-CRM Integration
+
+The Gateway service imports from CRM's layers directly:
+
+```python
+# gateway/crm/dependencies.py
+from commerce_agent.infrastructure.persistence import (
+    TenantRepositoryImpl,
+    CustomerRepositoryImpl,
+    # ... other repositories
+)
+from commerce_agent.application.services import (
+    CustomerService,
+    OrderService,
+    # ... other services
+)
+
+def get_tenant_repository() -> TenantRepositoryImpl:
+    return TenantRepositoryImpl()
+
+def get_order_service() -> OrderService:
+    return OrderService(
+        order_repository=get_order_repository(),
+        product_repository=get_product_repository(),
+        payment_repository=get_payment_repository(),
+        payment_client=get_payment_client(),
+    )
+```
+
+The webhook controller publishes to the CRM queue:
+
+```python
+# gateway/interface/controllers/crm/webhook_controller.py
+@router.post("/whatsapp/{tenant_id}")
+async def whatsapp_webhook(tenant_id: str, request: Request):
+    payload = await request.json()
+    payload["tenant_id"] = tenant_id
+
+    # Publish to CRM worker queue
+    publisher = get_crm_publisher()
+    await publisher.publish_webhook_task(payload)
+
+    return {"status": "queued", "tenant_id": tenant_id}
+```
 
 #### Labels/Tagging System
 - **Label entity** — Categorize conversations with color-coded labels
@@ -311,7 +379,7 @@ class LangGraphRunner:
 
 ## Multi-Agent Architecture
 
-The AI Engine supports a multi-agent system with specialized agents and intelligent routing:
+The LLM Worker supports a multi-agent system with specialized agents and intelligent routing:
 
 ### Agent Types
 
@@ -440,9 +508,9 @@ GitHub Actions workflow at `.github/workflows/docker.yml`:
 
 ### Services Built
 - `ai-platform-gateway` — Gateway service image
-- `ai-platform-ai-engine` — AI Engine worker image
-- `ai-platform-waha-sender` — WhatsApp sender service image
-- `ai-platform-crm-chatbot` — CRM Chatbot service image
+- `ai-platform-llm-worker` — LLM Worker worker image
+- `ai-platform-messenger` — WhatsApp sender service image
+- `ai-platform-commerce-agent` — Commerce Agent service image
 
 ### Image Tagging Strategy
 - `latest` — Default branch builds
@@ -466,8 +534,8 @@ GitHub Actions workflow at `.github/workflows/docker.yml`:
 | `RABBITMQ_TASK_QUEUE` | Both | Queue name (default: `ai_tasks`) |
 | `RABBITMQ_CRM_QUEUE` | CRM | CRM queue name (default: `crm_tasks`) |
 | `RABBITMQ_WA_QUEUE` | WAHA/CRM | WhatsApp message queue (default: `wa_messages`) |
-| `OPENAI_API_KEY` | AI Engine | OpenAI API key |
-| `ANTHROPIC_API_KEY` | AI Engine | Anthropic API key |
+| `OPENAI_API_KEY` | LLM Worker | OpenAI API key |
+| `ANTHROPIC_API_KEY` | LLM Worker | Anthropic API key |
 | `WAHA_SERVER_URL` | WAHA/CRM | WAHA server URL |
 | `WAHA_API_KEY` | WAHA/CRM | WAHA API key |
 | `MIDTRANS_SERVER_KEY` | CRM | Midtrans server key |
@@ -505,7 +573,7 @@ Extend `AgentState` and modify `LangGraphRunner.run()` to add nodes/edges.
 ### Scale workers
 
 ```bash
-docker-compose up --scale ai-engine=4
+docker-compose up --scale llm-worker=4
 ```
 
 ### Add a new CRM agent tool
@@ -520,8 +588,22 @@ docker-compose up --scale ai-engine=4
 
 1. Create client in `infrastructure/payment/` (e.g., `new_payment_client.py`)
 2. Implement `create_transaction()` and `check_transaction_status()` methods
-3. Add webhook handler in `WebhookController`
+3. Add webhook handler in Gateway's `WebhookController`
 4. Update `Tenant.payment_provider` validation
+
+### Add a new CRM HTTP endpoint
+
+1. Create controller in `services/gateway/src/gateway/interface/controllers/crm/`
+2. Import domain/application from `commerce_agent.*`
+3. Use dependency injection from `gateway.crm.dependencies`
+4. Register router in `services/gateway/src/gateway/interface/routes/crm_routes.py`
+
+### Run CRM worker locally
+
+```bash
+# The CRM service is a background worker (no HTTP)
+python -m commerce_agent.worker
+```
 
 ---
 
@@ -542,33 +624,41 @@ docker-compose up --scale ai-engine=4
 | What | Where |
 |------|-------|
 | CI/CD workflow | `.github/workflows/docker.yml` |
+| **Gateway Service** | |
 | Job entity | `services/gateway/src/gateway/domain/entities/job.py` |
 | Job service | `services/gateway/src/gateway/application/services/job_service.py` |
 | API routes | `services/gateway/src/gateway/interface/routes/api.py` |
-| LLM config entity | `services/ai_engine/src/ai_engine/domain/entities/llm_config.py` |
-| Agent config entity | `services/ai_engine/src/ai_engine/domain/entities/agent_config.py` |
-| LLM factory | `services/ai_engine/src/ai_engine/infrastructure/llm/llm_factory.py` |
-| LangGraph runner | `services/ai_engine/src/ai_engine/infrastructure/llm/langgraph_runner.py` |
-| Agent state | `services/ai_engine/src/ai_engine/infrastructure/llm/agent_state.py` |
-| Agent nodes | `services/ai_engine/src/ai_engine/infrastructure/llm/agent_nodes.py` |
-| Processing service | `services/ai_engine/src/ai_engine/application/services/processing_service.py` |
-| Processing DTOs | `services/ai_engine/src/ai_engine/application/dto/processing_dto.py` |
+| CRM routes | `services/gateway/src/gateway/interface/routes/crm_routes.py` |
+| CRM dependencies | `services/gateway/src/gateway/crm/dependencies.py` |
+| CRM publisher | `services/gateway/src/gateway/crm/publishers.py` |
+| CRM controllers | `services/gateway/src/gateway/interface/controllers/crm/` |
+| **LLM Worker Service** | |
+| LLM config entity | `services/llm-worker/src/llm_worker/domain/entities/llm_config.py` |
+| Agent config entity | `services/llm-worker/src/llm_worker/domain/entities/agent_config.py` |
+| LLM factory | `services/llm-worker/src/llm_worker/infrastructure/llm/llm_factory.py` |
+| LangGraph runner | `services/llm-worker/src/llm_worker/infrastructure/llm/langgraph_runner.py` |
+| Agent state | `services/llm-worker/src/llm_worker/infrastructure/llm/agent_state.py` |
+| Agent nodes | `services/llm-worker/src/llm_worker/infrastructure/llm/agent_nodes.py` |
+| Processing service | `services/llm-worker/src/llm_worker/application/services/processing_service.py` |
+| Processing DTOs | `services/llm-worker/src/llm_worker/application/dto/processing_dto.py` |
+| **Commerce Agent Worker** | |
+| Worker entry point | `services/commerce-agent/src/commerce_agent/worker.py` |
+| Tenant entity | `services/commerce-agent/src/commerce_agent/domain/entities/tenant.py` |
+| Customer entity | `services/commerce-agent/src/commerce_agent/domain/entities/customer.py` |
+| Order entity | `services/commerce-agent/src/commerce_agent/domain/entities/order.py` |
+| Product entity | `services/commerce-agent/src/commerce_agent/domain/entities/product.py` |
+| Conversation entity | `services/commerce-agent/src/commerce_agent/domain/entities/conversation.py` |
+| Label entity | `services/commerce-agent/src/commerce_agent/domain/entities/label.py` |
+| QuickReply entity | `services/commerce-agent/src/commerce_agent/domain/entities/quick_reply.py` |
+| Ticket entity | `services/commerce-agent/src/commerce_agent/domain/entities/ticket.py` |
+| Chatbot orchestrator | `services/commerce-agent/src/commerce_agent/application/services/chatbot_orchestrator.py` |
+| Label service | `services/commerce-agent/src/commerce_agent/application/services/label_service.py` |
+| QuickReply service | `services/commerce-agent/src/commerce_agent/application/services/quick_reply_service.py` |
+| CRM LangGraph runner | `services/commerce-agent/src/commerce_agent/infrastructure/llm/crm_langgraph_runner.py` |
+| CRM agent tools | `services/commerce-agent/src/commerce_agent/infrastructure/llm/tools/` |
+| Label tools | `services/commerce-agent/src/commerce_agent/infrastructure/llm/tools/label_tools.py` |
+| Midtrans client | `services/commerce-agent/src/commerce_agent/infrastructure/payment/midtrans_client.py` |
+| WA message handler | `services/commerce-agent/src/commerce_agent/application/handlers/wa_message_handler.py` |
+| **Shared** | |
 | Shared settings | `shared/config/settings.py` |
 | Database init | `infra/docker/postgres/init.sql` |
-| **CRM Chatbot** | |
-| Tenant entity | `services/crm_chatbot/src/crm_chatbot/domain/entities/tenant.py` |
-| Customer entity | `services/crm_chatbot/src/crm_chatbot/domain/entities/customer.py` |
-| Order entity | `services/crm_chatbot/src/crm_chatbot/domain/entities/order.py` |
-| Product entity | `services/crm_chatbot/src/crm_chatbot/domain/entities/product.py` |
-| Conversation entity | `services/crm_chatbot/src/crm_chatbot/domain/entities/conversation.py` |
-| Label entity | `services/crm_chatbot/src/crm_chatbot/domain/entities/label.py` |
-| QuickReply entity | `services/crm_chatbot/src/crm_chatbot/domain/entities/quick_reply.py` |
-| Ticket entity | `services/crm_chatbot/src/crm_chatbot/domain/entities/ticket.py` |
-| Chatbot orchestrator | `services/crm_chatbot/src/crm_chatbot/application/services/chatbot_orchestrator.py` |
-| Label service | `services/crm_chatbot/src/crm_chatbot/application/services/label_service.py` |
-| QuickReply service | `services/crm_chatbot/src/crm_chatbot/application/services/quick_reply_service.py` |
-| CRM LangGraph runner | `services/crm_chatbot/src/crm_chatbot/infrastructure/llm/crm_langgraph_runner.py` |
-| CRM agent tools | `services/crm_chatbot/src/crm_chatbot/infrastructure/llm/tools/` |
-| Label tools | `services/crm_chatbot/src/crm_chatbot/infrastructure/llm/tools/label_tools.py` |
-| Midtrans client | `services/crm_chatbot/src/crm_chatbot/infrastructure/payment/midtrans_client.py` |
-| WA message handler | `services/crm_chatbot/src/crm_chatbot/application/handlers/wa_message_handler.py` |

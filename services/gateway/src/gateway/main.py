@@ -10,6 +10,11 @@ from gateway.infrastructure.cache import RedisCache
 from gateway.infrastructure.messaging import RabbitMQPublisher, WAMessagePublisher
 from gateway.infrastructure.persistence import JobRepositoryImpl
 from gateway.interface.routes import router as api_router
+from gateway.crm import (
+    init_crm_publisher,
+    shutdown_crm_publisher,
+    cleanup_crm_dependencies,
+)
 from shared.config import get_settings
 
 # Configure logging
@@ -79,12 +84,21 @@ async def lifespan(app: FastAPI):
     )
     await _wa_publisher.connect()
 
+    # Initialize CRM publisher for webhook events
+    await init_crm_publisher()
+    logger.info("CRM publisher initialized")
+
     logger.info("Gateway service started successfully")
 
     yield
 
     # Cleanup
     logger.info("Shutting down Gateway service")
+
+    # Shutdown CRM components
+    await shutdown_crm_publisher()
+    await cleanup_crm_dependencies()
+
     if _cache:
         await _cache.disconnect()
     if _publisher:

@@ -36,6 +36,20 @@ class Settings(BaseSettings):
     rabbitmq_task_queue: str = "ai_tasks"
     rabbitmq_event_exchange: str = "ai_events"
     rabbitmq_wa_queue: str = "wa_messages"  # Queue for WhatsApp outgoing messages
+    rabbitmq_crm_queue: str = "crm_tasks"  # Queue for CRM processing tasks
+
+    # Midtrans Payment Gateway
+    midtrans_server_key: str = ""
+    midtrans_client_key: str = ""
+    midtrans_is_production: bool = False
+
+    # Xendit Payment Gateway (optional)
+    xendit_secret_key: str = ""
+
+    # Message Buffer Settings (for CRM chatbot)
+    message_buffer_initial_delay: float = 2.0
+    message_buffer_max_delay: float = 10.0
+    buffer_flush_interval: float = 0.5
 
     # LLM Provider API Keys (env var names, not actual keys)
     openai_api_key: str | None = None

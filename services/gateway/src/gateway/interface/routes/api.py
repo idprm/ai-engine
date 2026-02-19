@@ -15,6 +15,7 @@ from gateway.interface.schemas import (
     WASendMessageRequest,
     WASendMessageResponse,
 )
+from gateway.interface.routes.crm_routes import crm_router
 
 router = APIRouter()
 
@@ -120,3 +121,7 @@ async def send_wa_message(request: WASendMessageRequest):
     """
     controller = get_wa_controller()
     return await controller.send_message(request)
+
+
+# Include CRM routes
+router.include_router(crm_router)

@@ -15,9 +15,9 @@ on:
 env:
   REGISTRY: docker.io
   GATEWAY_IMAGE: ${{ secrets.DOCKER_USERNAME }}/ai-platform-gateway
-  AI_ENGINE_IMAGE: ${{ secrets.DOCKER_USERNAME }}/ai-platform-ai-engine
-  WAHA_SENDER_IMAGE: ${{ secrets.DOCKER_USERNAME }}/ai-platform-waha-sender
-  CRM_CHATBOT_IMAGE: ${{ secrets.DOCKER_USERNAME }}/ai-platform-crm-chatbot
+  LLM_WORKER_IMAGE: ${{ secrets.DOCKER_USERNAME }}/ai-platform-llm-worker
+  COMMERCE_AGENT_IMAGE: ${{ secrets.DOCKER_USERNAME }}/ai-platform-commerce-agent
+  MESSENGER_IMAGE: ${{ secrets.DOCKER_USERNAME }}/ai-platform-messenger
 
 jobs:
   build:
@@ -28,15 +28,15 @@ jobs:
           - name: gateway
             dockerfile: services/gateway/Dockerfile
             image: ai-platform-gateway
-          - name: ai-engine
-            dockerfile: services/ai_engine/Dockerfile
-            image: ai-platform-ai-engine
-          - name: waha-sender
-            dockerfile: services/waha_sender/Dockerfile
-            image: ai-platform-waha-sender
-          - name: crm-chatbot
-            dockerfile: services/crm_chatbot/Dockerfile
-            image: ai-platform-crm-chatbot
+          - name: llm-worker
+            dockerfile: services/llm-worker/Dockerfile
+            image: ai-platform-llm-worker
+          - name: commerce-agent
+            dockerfile: services/commerce-agent/Dockerfile
+            image: ai-platform-commerce-agent
+          - name: messenger
+            dockerfile: services/messenger/Dockerfile
+            image: ai-platform-messenger
     permissions:
       contents: read
       packages: write

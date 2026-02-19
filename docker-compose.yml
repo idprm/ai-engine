@@ -86,13 +86,13 @@ services:
       timeout: 10s
       retries: 3
 
-  ai-engine:
+  llm-worker:
     build:
       context: .
-      dockerfile: services/ai_engine/Dockerfile
-    container_name: ai-platform-engine
+      dockerfile: services/llm-worker/Dockerfile
+    container_name: ai-platform-llm-worker
     environment:
-      - SERVICE_NAME=ai-engine
+      - SERVICE_NAME=llm-worker
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/ai_platform
       - REDIS_URL=redis://redis:6379/0
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
@@ -100,7 +100,7 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     volumes:
       - ./shared:/app/shared:ro
-      - ./services/ai_engine/src/ai_engine:/app/ai_engine:ro
+      - ./services/llm-worker/src/llm_worker:/app/llm_worker:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -111,14 +111,47 @@ services:
     deploy:
       replicas: 2
 
-  # WAHA Sender Service - Sends WhatsApp messages
-  waha-sender:
+  # Commerce Agent Service - WhatsApp commerce/CRM chatbot
+  commerce-agent:
     build:
       context: .
-      dockerfile: services/waha_sender/Dockerfile
-    container_name: ai-platform-waha-sender
+      dockerfile: services/commerce-agent/Dockerfile
+    container_name: ai-platform-commerce-agent
     environment:
-      - SERVICE_NAME=waha-sender
+      - SERVICE_NAME=commerce-agent
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/ai_platform
+      - REDIS_URL=redis://redis:6379/0
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - WAHA_SERVER_URL=${WAHA_SERVER_URL:-http://waha:3000}
+      - WAHA_API_KEY=${WAHA_API_KEY:-}
+      - WAHA_SESSION=${WAHA_SESSION:-default}
+      - MIDTRANS_SERVER_KEY=${MIDTRANS_SERVER_KEY:-}
+      - MIDTRANS_CLIENT_KEY=${MIDTRANS_CLIENT_KEY:-}
+      - MIDTRANS_IS_PRODUCTION=${MIDTRANS_IS_PRODUCTION:-false}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    volumes:
+      - ./shared:/app/shared:ro
+      - ./services/commerce-agent/src/commerce_agent:/app/commerce_agent:ro
+      - ./services/llm-worker/src/llm_worker:/app/llm_worker:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    deploy:
+      replicas: 1
+
+  # Messenger Service - Sends WhatsApp messages
+  messenger:
+    build:
+      context: .
+      dockerfile: services/messenger/Dockerfile
+    container_name: ai-platform-messenger
+    environment:
+      - SERVICE_NAME=messenger
       - REDIS_URL=redis://redis:6379/0
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
       - WAHA_SERVER_URL=${WAHA_SERVER_URL:-http://waha:3000}
@@ -126,7 +159,7 @@ services:
       - WAHA_SESSION=${WAHA_SESSION:-default}
     volumes:
       - ./shared:/app/shared:ro
-      - ./services/waha_sender/src/waha_sender:/app/waha_sender:ro
+      - ./services/messenger/src/messenger:/app/messenger:ro
     depends_on:
       redis:
         condition: service_healthy

@@ -7,12 +7,12 @@ A scalable AI processing platform built with **Domain-Driven Design (DDD)** arch
 ## Key Features
 
 - **Domain-Driven Design** — Classic 4-layer architecture (Domain, Application, Infrastructure, Interface) with isolated bounded contexts
-- **Microservices Architecture** — Decoupled Gateway, AI Engine, WAHA Sender, and CRM Chatbot services
+- **Microservices Architecture** — Decoupled Gateway, LLM Worker, Messenger, and Commerce Agent services
 - **Asynchronous Processing** — RabbitMQ message broker for long-running AI tasks
 - **Dynamic Configuration** — LLM configs and prompt templates stored in PostgreSQL for runtime changes
 - **LangGraph Integration** — Stateful, multi-step agent workflows with tool-calling
 - **Multi-Agent Architecture** — Specialized agents (Main, Fallback, Followup, Moderation) with intelligent routing
-- **WhatsApp CRM Chatbot** — Multi-tenant customer service with product catalog, orders, and payments
+- **WhatsApp Commerce Agent** — Multi-tenant customer service with product catalog, orders, and payments
 - **Payment Integration** — Midtrans and Xendit payment gateway support
 - **Customer Service Tools** — Labels/Tagging, Quick Replies, Ticket System for support management
 - **High Performance** — SQLAlchemy 2.0 with asyncpg, Redis caching, connection pooling
@@ -22,19 +22,23 @@ A scalable AI processing platform built with **Domain-Driven Design (DDD)** arch
 ## Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        GATEWAY SERVICE                          │
-├─────────────────────────────────────────────────────────────────┤
-│  Interface/        │  Application/      │  Domain/             │
-│  - controllers/    │  - services/       │  - entities/         │
-│  - routes/         │  - dto/            │  - value_objects/    │
-│  - schemas/        │                    │  - repositories/     │
-│                    │                    │  - events/           │
-├─────────────────────────────────────────────────────────────────┤
-│  Infrastructure/                                                 │
-│  - persistence/ (SQLAlchemy repos)    - cache/ (Redis)         │
-│  - messaging/   (RabbitMQ publishers)                            │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           GATEWAY SERVICE                                │
+│                    (All HTTP Endpoints - No Business Logic)             │
+├─────────────────────────────────────────────────────────────────────────┤
+│  Interface/                    │  CRM Context/                          │
+│  - controllers/job_controller  │  - crm/dependencies.py (DI)            │
+│  - controllers/wa_controller   │  - crm/publishers.py (Queue)           │
+│  - controllers/crm/*           │                                        │
+│  - routes/api.py               │  Imports from CRM:                     │
+│  - routes/crm_routes.py        │  - domain/entities, value_objects      │
+│                                │  - application/services, dto           │
+│                                │  - infrastructure/persistence          │
+├─────────────────────────────────────────────────────────────────────────┤
+│  Infrastructure/                                                         │
+│  - persistence/ (SQLAlchemy repos)    - cache/ (Redis)                  │
+│  - messaging/   (RabbitMQ publishers)                                    │
+└─────────────────────────────────────────────────────────────────────────┘
                               │
                               ▼
                          RabbitMQ
@@ -43,23 +47,30 @@ A scalable AI processing platform built with **Domain-Driven Design (DDD)** arch
             │                 │                 │
             ▼                 ▼                 ▼
 ┌───────────────────┐ ┌───────────────────┐ ┌───────────────────┐
-│   AI ENGINE       │ │   WAHA SENDER     │ │   CRM CHATBOT     │
-│   SERVICE         │ │   SERVICE         │ │   SERVICE         │
+│   LLM WORKER      │ │   MESSENGER       │ │ COMMERCE AGENT    │
+│   SERVICE         │ │   SERVICE         │ │   (Background)    │
 ├───────────────────┤ ├───────────────────┤ ├───────────────────┤
 │  - LLM Pipeline   │ │  - WhatsApp API   │ │  - Multi-tenant   │
 │  - Multi-agent    │ │  - Message send   │ │  - Product catalog│
 │  - LangGraph      │ │  - WAHA client    │ │  - Order mgmt     │
 └───────────────────┘ └───────────────────┘ │  - Payments       │
+                                          │  - LLM Processing │
+                                          │  - NO HTTP        │
                                           └───────────────────┘
 ```
 
 ### Message Flow
 
 ```
-[WhatsApp] --webhook--> [Gateway] --RabbitMQ (crm_tasks)--> [CRM Chatbot]
-                                                              │
-[WhatsApp] <--send-- [Waha Sender] <--RabbitMQ (wa_messages)--┘
+[WhatsApp] --webhook--> [Gateway] --RabbitMQ (crm_tasks)--> [CRM Worker]
+     │                     │                                    │
+     │              All HTTP APIs                              LLM Processing
+     │              /v1/crm/*                                   │
+     │                                                          │
+[WhatsApp] <--send-- [Messenger] <--RabbitMQ (wa_messages)--┘
 ```
+
+**Note:** Commerce Agent is now a **background worker only** - all HTTP routes have been moved to Gateway.
 
 ---
 
@@ -81,7 +92,7 @@ ai-platform/
 │   └── exceptions/                 # Domain exceptions
 │
 ├── services/
-│   ├── gateway/                    # FastAPI REST API
+│   ├── gateway/                    # FastAPI REST API (All HTTP endpoints)
 │   │   ├── Dockerfile
 │   │   ├── pyproject.toml
 │   │   └── src/gateway/
@@ -97,15 +108,29 @@ ai-platform/
 │   │       │   ├── persistence/    # SQLAlchemy repos
 │   │       │   ├── messaging/      # RabbitMQ publisher
 │   │       │   └── cache/          # Redis client
+│   │       ├── crm/                # CRM context (DI, publishers)
+│   │       │   ├── dependencies.py # DI factories for CRM repos/services
+│   │       │   └── publishers.py   # CRM task queue publisher
 │   │       └── interface/
-│   │           ├── controllers/job_controller.py
-│   │           ├── routes/api.py
-│   │           └── schemas/job_schemas.py
+│   │           ├── controllers/
+│   │           │   ├── job_controller.py
+│   │           │   ├── wa_controller.py
+│   │           │   └── crm/        # Migrated CRM controllers
+│   │           │       ├── tenant_controller.py
+│   │           │       ├── product_controller.py
+│   │           │       ├── order_controller.py
+│   │           │       ├── webhook_controller.py
+│   │           │       ├── label_controller.py
+│   │           │       └── quick_reply_controller.py
+│   │           ├── routes/
+│   │           │   ├── api.py
+│   │           │   └── crm_routes.py
+│   │           └── schemas/
 │   │
-│   ├── ai_engine/                  # Worker service
+│   ├── llm-worker/                 # Worker service
 │   │   ├── Dockerfile
 │   │   ├── pyproject.toml
-│   │   └── src/ai_engine/
+│   │   └── src/llm_worker/
 │   │       ├── domain/
 │   │       │   ├── entities/       # LLMConfig, PromptTemplate, AgentConfig
 │   │       │   ├── value_objects/  # Provider, ModelName, Temperature
@@ -122,19 +147,21 @@ ai-platform/
 │   │       └── interface/
 │   │           └── handlers/message_handler.py
 │   │
-│   ├── waha_sender/                # WhatsApp message sender
+│   ├── messenger/                  # WhatsApp message sender
 │   │   ├── Dockerfile
 │   │   ├── pyproject.toml
-│   │   └── src/waha_sender/
+│   │   └── src/messenger/
 │   │       ├── infrastructure/
 │   │       │   ├── waha/           # WAHA API client
 │   │       │   └── messaging/      # RabbitMQ consumer
 │   │       └── main.py
 │   │
-│   └── crm_chatbot/                # CRM Chatbot service
-│       ├── Dockerfile
+│   └── commerce-agent/             # Commerce Agent WORKER (background only)
+│       ├── Dockerfile              # Runs worker.py, not uvicorn
 │       ├── pyproject.toml
-│       └── src/crm_chatbot/
+│       └── src/commerce_agent/
+│           ├── worker.py           # Worker entry point (NO HTTP)
+│           ├── main.py             # Deprecated (for dev only)
 │           ├── domain/
 │           │   ├── entities/       # Tenant, Customer, Product, Order, Conversation, Payment
 │           │   ├── value_objects/  # TenantId, OrderStatus, Money, ConversationState
@@ -150,9 +177,7 @@ ai-platform/
 │           │   ├── llm/            # CRMLangGraphRunner, tools
 │           │   ├── payment/        # Midtrans, Xendit clients
 │           │   └── cache/          # Conversation cache
-│           └── interface/
-│               ├── controllers/    # Tenant, Product, Order, Webhook controllers
-│               └── routes/api.py
+│           └── interface/          # (DEPRECATED - routes moved to Gateway)
 │
 └── infra/
     └── docker/
@@ -261,7 +286,7 @@ curl "http://localhost:8000/health"
 - `JobStatus` — QUEUED → PROCESSING → COMPLETED | FAILED
 - Events: `JobCreated`, `JobStatusChanged`, `JobCompleted`, `JobFailed`
 
-### AI Engine Bounded Context
+### LLM Worker Bounded Context
 
 **LLMConfig Aggregate:**
 - `Provider` — openai | anthropic
@@ -280,7 +305,7 @@ curl "http://localhost:8000/health"
 
 ## Multi-Agent Architecture
 
-The AI Engine supports a sophisticated multi-agent system with intelligent routing:
+The LLM Worker supports a sophisticated multi-agent system with intelligent routing:
 
 ```
                     ┌─────────────────┐
@@ -338,9 +363,24 @@ result = await processing_service.process_multi_agent(
 
 ---
 
-## CRM Chatbot Service
+## Commerce Agent Service
 
-The CRM Chatbot service enables WhatsApp-based customer interactions with multi-tenant support.
+The Commerce Agent is a **background worker service** that processes WhatsApp messages and payment callbacks. All HTTP endpoints have been moved to the Gateway service.
+
+### Architecture Note
+
+> **Important:** The Commerce Agent no longer exposes HTTP endpoints. All API routes (`/v1/crm/*`) are handled by the Gateway service. The Commerce Worker consumes messages from the `crm_tasks` queue and processes them asynchronously.
+
+```
+Gateway Service                      Commerce Agent Service
+─────────────                        ─────────────────────
+HTTP /v1/crm/tenants/*               Consumes crm_tasks queue
+HTTP /v1/crm/products/*      ──>     LLM Processing
+HTTP /v1/crm/orders/*               Message Handling
+HTTP /v1/crm/webhook/*               Payment Processing
+HTTP /v1/crm/labels/*
+HTTP /v1/crm/quick-replies/*
+```
 
 ### Features
 
@@ -377,9 +417,9 @@ GREETING → BROWSING → ORDERING → CHECKOUT → PAYMENT → COMPLETED
                            |______________________|
 ```
 
-### API Endpoints
+### API Endpoints (Gateway Service)
 
-| Endpoint | Description |
+All CRM endpoints are now served by the **Gateway service** at `http://localhost:8000`:
 |----------|-------------|
 | `POST /v1/crm/tenants` | Create tenant |
 | `GET /v1/crm/tenants/{id}` | Get tenant |
@@ -513,7 +553,7 @@ CREATE TABLE ticket_templates (
 Scale workers horizontally:
 
 ```bash
-docker-compose up --scale ai-engine=4
+docker-compose up --scale llm-worker=4
 ```
 
 RabbitMQ distributes messages across all worker instances automatically.
@@ -528,13 +568,17 @@ RabbitMQ distributes messages across all worker instances automatically.
 # Install dependencies
 pip install -e .
 pip install -e ./services/gateway
-pip install -e ./services/ai_engine
+pip install -e ./services/llm-worker
+pip install -e ./services/commerce-agent
 
-# Run Gateway
-uvicorn gateway.main:app --reload
+# Run Gateway (all HTTP endpoints)
+uvicorn gateway.main:app --reload --port 8000
 
-# Run AI Engine
-python -m ai_engine.main
+# Run LLM Worker (background worker)
+python -m llm_worker.main
+
+# Run Commerce Agent Worker (background worker)
+python -m commerce_agent.worker
 ```
 
 ### Running Tests
@@ -559,9 +603,9 @@ The CI/CD pipeline (`.github/workflows/docker.yml`) automatically:
 ### Services
 
 - `ai-platform-gateway` — Gateway service
-- `ai-platform-ai-engine` — AI Engine worker
-- `ai-platform-waha-sender` — WhatsApp sender
-- `ai-platform-crm-chatbot` — CRM Chatbot
+- `ai-platform-llm-worker` — LLM Worker
+- `ai-platform-messenger` — WhatsApp Messenger
+- `ai-platform-commerce-agent` — Commerce Agent
 
 ### Image Tags
 
@@ -585,13 +629,13 @@ Configure these in your GitHub repository settings:
 ```bash
 # Build and push manually
 docker build -f services/gateway/Dockerfile -t your-username/ai-platform-gateway:latest .
-docker build -f services/ai_engine/Dockerfile -t your-username/ai-platform-ai-engine:latest .
-docker build -f services/waha_sender/Dockerfile -t your-username/ai-platform-waha-sender:latest .
-docker build -f services/crm_chatbot/Dockerfile -t your-username/ai-platform-crm-chatbot:latest .
+docker build -f services/llm-worker/Dockerfile -t your-username/ai-platform-llm-worker:latest .
+docker build -f services/messenger/Dockerfile -t your-username/ai-platform-messenger:latest .
+docker build -f services/commerce-agent/Dockerfile -t your-username/ai-platform-commerce-agent:latest .  # Worker, not HTTP
 docker push your-username/ai-platform-gateway:latest
-docker push your-username/ai-platform-ai-engine:latest
-docker push your-username/ai-platform-waha-sender:latest
-docker push your-username/ai-platform-crm-chatbot:latest
+docker push your-username/ai-platform-llm-worker:latest
+docker push your-username/ai-platform-messenger:latest
+docker push your-username/ai-platform-commerce-agent:latest
 ```
 
 ---

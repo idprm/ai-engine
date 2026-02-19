@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "ai-platform"
 version = "0.1.0"
-description = "AI Platform with DDD Architecture - Gateway and AI Engine Services"
+description = "AI Platform with DDD Architecture - Gateway, LLM Worker, Commerce Agent, and Messenger Services"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.12"
@@ -62,7 +62,7 @@ ignore = [
 ]
 
 [tool.ruff.isort]
-known-first-party = ["shared", "gateway", "ai_engine"]
+known-first-party = ["shared", "gateway", "llm_worker", "commerce_agent", "messenger"]
 
 [tool.mypy]
 python_version = "3.12"
