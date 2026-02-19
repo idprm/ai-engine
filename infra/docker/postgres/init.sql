@@ -137,6 +137,82 @@ CREATE TABLE IF NOT EXISTS payments (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Labels table for conversation tagging
+CREATE TABLE IF NOT EXISTS labels (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    name VARCHAR(100) NOT NULL,
+    color VARCHAR(7) DEFAULT '#3498db',
+    description TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(tenant_id, name)
+);
+
+-- Conversation Labels association table
+CREATE TABLE IF NOT EXISTS conversation_labels (
+    conversation_id VARCHAR(100) NOT NULL,
+    label_id UUID NOT NULL REFERENCES labels(id) ON DELETE CASCADE,
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    applied_by VARCHAR(50),
+    PRIMARY KEY (conversation_id, label_id)
+);
+
+-- Quick Replies table for template responses
+CREATE TABLE IF NOT EXISTS quick_replies (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    shortcut VARCHAR(50) NOT NULL,
+    content TEXT NOT NULL,
+    category VARCHAR(100) DEFAULT 'general',
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(tenant_id, shortcut)
+);
+
+-- Ticket Boards table
+CREATE TABLE IF NOT EXISTS ticket_boards (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    name VARCHAR(200) NOT NULL,
+    description TEXT,
+    is_default BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tickets table
+CREATE TABLE IF NOT EXISTS tickets (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    board_id UUID REFERENCES ticket_boards(id) ON DELETE SET NULL,
+    conversation_id VARCHAR(100),
+    customer_id UUID REFERENCES customers(id) ON DELETE SET NULL,
+    subject VARCHAR(500) NOT NULL,
+    description TEXT,
+    status VARCHAR(30) NOT NULL DEFAULT 'open',
+    priority VARCHAR(20) NOT NULL DEFAULT 'none',
+    assignee_id VARCHAR(100),
+    resolution TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    resolved_at TIMESTAMP WITH TIME ZONE,
+    closed_at TIMESTAMP WITH TIME ZONE
+);
+
+-- Ticket Templates table
+CREATE TABLE IF NOT EXISTS ticket_templates (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    name VARCHAR(200) NOT NULL,
+    subject_template TEXT,
+    description_template TEXT,
+    default_priority VARCHAR(20) DEFAULT 'none',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 -- =====================================================
 -- CRM Indexes
 -- =====================================================
@@ -156,6 +232,25 @@ CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_payment_status ON orders(payment_status);
 CREATE INDEX IF NOT EXISTS idx_payments_order ON payments(order_id);
 CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
+CREATE INDEX IF NOT EXISTS idx_labels_tenant ON labels(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_labels_name ON labels(name);
+CREATE INDEX IF NOT EXISTS idx_labels_active ON labels(is_active);
+CREATE INDEX IF NOT EXISTS idx_conversation_labels_conversation ON conversation_labels(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_conversation_labels_label ON conversation_labels(label_id);
+CREATE INDEX IF NOT EXISTS idx_conversation_labels_tenant ON conversation_labels(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_quick_replies_tenant ON quick_replies(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_quick_replies_shortcut ON quick_replies(shortcut);
+CREATE INDEX IF NOT EXISTS idx_quick_replies_category ON quick_replies(category);
+CREATE INDEX IF NOT EXISTS idx_quick_replies_active ON quick_replies(is_active);
+CREATE INDEX IF NOT EXISTS idx_ticket_boards_tenant ON ticket_boards(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_tickets_tenant ON tickets(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_tickets_board ON tickets(board_id);
+CREATE INDEX IF NOT EXISTS idx_tickets_status ON tickets(status);
+CREATE INDEX IF NOT EXISTS idx_tickets_priority ON tickets(priority);
+CREATE INDEX IF NOT EXISTS idx_tickets_customer ON tickets(customer_id);
+CREATE INDEX IF NOT EXISTS idx_tickets_conversation ON tickets(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_tickets_assignee ON tickets(assignee_id);
+CREATE INDEX IF NOT EXISTS idx_ticket_templates_tenant ON ticket_templates(tenant_id);
 
 -- =====================================================
 -- AI Engine Indexes
@@ -243,5 +338,20 @@ CREATE TRIGGER update_orders_updated_at
 
 CREATE TRIGGER update_payments_updated_at
     BEFORE UPDATE ON payments
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_labels_updated_at
+    BEFORE UPDATE ON labels
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_quick_replies_updated_at
+    BEFORE UPDATE ON quick_replies
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_tickets_updated_at
+    BEFORE UPDATE ON tickets
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();

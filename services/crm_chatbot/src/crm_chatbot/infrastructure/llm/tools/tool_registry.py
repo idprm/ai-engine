@@ -25,6 +25,11 @@ from crm_chatbot.infrastructure.llm.tools.payment_tools import (
     initiate_payment,
     check_payment_status,
 )
+from crm_chatbot.infrastructure.llm.tools.label_tools import (
+    label_conversation,
+    get_available_labels,
+    remove_label,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +46,7 @@ ORDER_TOOLS = [
 ]
 CUSTOMER_TOOLS = ["get_customer_profile", "update_customer_profile"]
 PAYMENT_TOOLS = ["initiate_payment", "check_payment_status"]
+LABEL_TOOLS = ["label_conversation", "get_available_labels", "remove_label"]
 
 
 def get_all_tools() -> list[BaseTool]:
@@ -67,6 +73,10 @@ def get_all_tools() -> list[BaseTool]:
         # Payment tools
         initiate_payment,
         check_payment_status,
+        # Label tools
+        label_conversation,
+        get_available_labels,
+        remove_label,
     ]
 
 
@@ -74,7 +84,7 @@ def get_tools_by_category(category: str) -> list[BaseTool]:
     """Get tools by category.
 
     Args:
-        category: Category name (product, order, customer, payment).
+        category: Category name (product, order, customer, payment, label).
 
     Returns:
         List of tools in the category.
@@ -87,6 +97,7 @@ def get_tools_by_category(category: str) -> list[BaseTool]:
         "order": ORDER_TOOLS,
         "customer": CUSTOMER_TOOLS,
         "payment": PAYMENT_TOOLS,
+        "label": LABEL_TOOLS,
     }
 
     if category not in categories:
@@ -117,7 +128,7 @@ def get_tools_for_conversation_state(state: str) -> list[BaseTool]:
         ],
         "checkout": ["confirm_order", "get_order_status", "cancel_order"],
         "payment": ["initiate_payment", "check_payment_status"],
-        "support": ["get_customer_profile", "get_order_status", "get_customer_orders"],
+        "support": ["get_customer_profile", "get_order_status", "get_customer_orders", "label_conversation", "get_available_labels"],
     }
 
     all_tools = get_all_tools()
@@ -147,6 +158,10 @@ TOOL_EXECUTORS: dict[str, Callable] = {
     # Payment tools
     "initiate_payment": None,
     "check_payment_status": None,
+    # Label tools
+    "label_conversation": None,
+    "get_available_labels": None,
+    "remove_label": None,
 }
 
 

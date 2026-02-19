@@ -169,3 +169,61 @@ class PaymentModel(Base):
     metadata: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class LabelModel(Base):
+    """SQLAlchemy model for Label entity."""
+    __tablename__ = "labels"
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    color: Mapped[str] = mapped_column(String(7), nullable=False, default="#3498db")
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    # Relationships
+    tenant: Mapped["TenantModel"] = relationship()
+
+    # Unique constraint
+    __table_args__ = (
+        {"unique_constraint": [("tenant_id", "name")]},
+    )
+
+
+class ConversationLabelModel(Base):
+    """SQLAlchemy model for ConversationLabel association."""
+    __tablename__ = "conversation_labels"
+
+    conversation_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    label_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("labels.id", ondelete="CASCADE"), primary_key=True)
+    tenant_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    applied_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    applied_by: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+    # Relationships
+    label: Mapped["LabelModel"] = relationship()
+
+
+class QuickReplyModel(Base):
+    """SQLAlchemy model for QuickReply entity."""
+    __tablename__ = "quick_replies"
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    shortcut: Mapped[str] = mapped_column(String(50), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(String(100), nullable=False, default="general")
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    # Relationships
+    tenant: Mapped["TenantModel"] = relationship()
+
+    # Unique constraint
+    __table_args__ = (
+        {"unique_constraint": [("tenant_id", "shortcut")]},
+    )

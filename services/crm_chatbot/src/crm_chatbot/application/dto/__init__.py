@@ -24,6 +24,21 @@ from crm_chatbot.application.dto.customer_dto import (
     CustomerDTO,
     UpdateCustomerDTO,
 )
+from crm_chatbot.application.dto.label_dto import (
+    LabelDTO,
+    CreateLabelDTO,
+    UpdateLabelDTO,
+    ApplyLabelDTO,
+    BatchApplyLabelsDTO,
+    ConversationLabelsDTO,
+    LabelWithConversationsDTO,
+)
+from crm_chatbot.application.dto.quick_reply_dto import (
+    QuickReplyDTO,
+    CreateQuickReplyDTO,
+    UpdateQuickReplyDTO,
+    QuickReplyListDTO,
+)
 
 __all__ = [
     # Message DTOs
@@ -45,4 +60,17 @@ __all__ = [
     # Customer DTOs
     "CustomerDTO",
     "UpdateCustomerDTO",
+    # Label DTOs
+    "LabelDTO",
+    "CreateLabelDTO",
+    "UpdateLabelDTO",
+    "ApplyLabelDTO",
+    "BatchApplyLabelsDTO",
+    "ConversationLabelsDTO",
+    "LabelWithConversationsDTO",
+    # Quick Reply DTOs
+    "QuickReplyDTO",
+    "CreateQuickReplyDTO",
+    "UpdateQuickReplyDTO",
+    "QuickReplyListDTO",
 ]

@@ -14,6 +14,7 @@ A scalable AI processing platform built with **Domain-Driven Design (DDD)** arch
 - **Multi-Agent Architecture** — Specialized agents (Main, Fallback, Followup, Moderation) with intelligent routing
 - **WhatsApp CRM Chatbot** — Multi-tenant customer service with product catalog, orders, and payments
 - **Payment Integration** — Midtrans and Xendit payment gateway support
+- **Customer Service Tools** — Labels/Tagging, Quick Replies, Ticket System for support management
 - **High Performance** — SQLAlchemy 2.0 with asyncpg, Redis caching, connection pooling
 
 ---
@@ -364,6 +365,9 @@ The CRM Chatbot service enables WhatsApp-based customer interactions with multi-
 | `initiate_payment` | Generate payment link |
 | `get_customer_profile` | Get customer info |
 | `update_customer_profile` | Update customer details |
+| `label_conversation` | Apply label to conversation for categorization |
+| `get_available_labels` | Get all available labels for tenant |
+| `remove_label` | Remove label from conversation |
 
 ### Conversation States
 
@@ -386,6 +390,18 @@ GREETING → BROWSING → ORDERING → CHECKOUT → PAYMENT → COMPLETED
 | `PUT /v1/crm/orders/{id}/status` | Update status |
 | `POST /v1/crm/webhook/{tenant_id}` | WhatsApp webhook |
 | `POST /v1/crm/payments/callback/{provider}` | Payment callback |
+| **Labels** | |
+| `POST /v1/crm/tenants/{id}/labels` | Create label |
+| `GET /v1/crm/tenants/{id}/labels` | List labels |
+| `PUT /v1/crm/tenants/{id}/labels/{label_id}` | Update label |
+| `DELETE /v1/crm/tenants/{id}/labels/{label_id}` | Delete label |
+| `POST /v1/crm/conversations/{id}/labels` | Apply label to conversation |
+| `GET /v1/crm/conversations/{id}/labels` | Get conversation labels |
+| **Quick Replies** | |
+| `POST /v1/crm/tenants/{id}/quick-replies` | Create quick reply |
+| `GET /v1/crm/tenants/{id}/quick-replies` | List quick replies |
+| `PUT /v1/crm/tenants/{id}/quick-replies/{id}` | Update quick reply |
+| `DELETE /v1/crm/tenants/{id}/quick-replies/{id}` | Delete quick reply |
 
 ---
 
@@ -418,6 +434,76 @@ INSERT INTO prompt_templates (name, content, description) VALUES
     ('fallback-agent', 'Fallback agent system prompt...', 'Fallback agent for error recovery'),
     ('followup-agent', 'Followup agent system prompt...', 'Agent for conversation continuity'),
     ('moderation-agent', 'Moderation agent system prompt...', 'Agent for content moderation');
+
+-- Labels for conversation tagging
+CREATE TABLE labels (
+    id UUID PRIMARY KEY,
+    tenant_id UUID REFERENCES tenants(id),
+    name VARCHAR(100) NOT NULL,
+    color VARCHAR(7) DEFAULT '#3498db',
+    description TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    UNIQUE(tenant_id, name)
+);
+
+-- Conversation Labels association
+CREATE TABLE conversation_labels (
+    conversation_id VARCHAR(100),
+    label_id UUID REFERENCES labels(id),
+    tenant_id UUID REFERENCES tenants(id),
+    applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    applied_by VARCHAR(50),
+    PRIMARY KEY (conversation_id, label_id)
+);
+
+-- Quick Replies for template responses
+CREATE TABLE quick_replies (
+    id UUID PRIMARY KEY,
+    tenant_id UUID REFERENCES tenants(id),
+    shortcut VARCHAR(50) NOT NULL,
+    content TEXT NOT NULL,
+    category VARCHAR(100) DEFAULT 'general',
+    is_active BOOLEAN DEFAULT TRUE,
+    UNIQUE(tenant_id, shortcut)
+);
+
+-- Ticket Boards
+CREATE TABLE ticket_boards (
+    id UUID PRIMARY KEY,
+    tenant_id UUID REFERENCES tenants(id),
+    name VARCHAR(200) NOT NULL,
+    description TEXT,
+    is_default BOOLEAN DEFAULT FALSE
+);
+
+-- Tickets
+CREATE TABLE tickets (
+    id UUID PRIMARY KEY,
+    tenant_id UUID REFERENCES tenants(id),
+    board_id UUID REFERENCES ticket_boards(id),
+    conversation_id VARCHAR(100),
+    customer_id UUID REFERENCES customers(id),
+    subject VARCHAR(500) NOT NULL,
+    description TEXT,
+    status VARCHAR(30) DEFAULT 'open',
+    priority VARCHAR(20) DEFAULT 'none',
+    assignee_id VARCHAR(100),
+    resolution TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    resolved_at TIMESTAMP,
+    closed_at TIMESTAMP
+);
+
+-- Ticket Templates
+CREATE TABLE ticket_templates (
+    id UUID PRIMARY KEY,
+    tenant_id UUID REFERENCES tenants(id),
+    name VARCHAR(200) NOT NULL,
+    subject_template TEXT,
+    description_template TEXT,
+    default_priority VARCHAR(20) DEFAULT 'none'
+);
 ```
 
 ---

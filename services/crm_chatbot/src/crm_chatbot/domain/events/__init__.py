@@ -23,6 +23,22 @@ from crm_chatbot.domain.events.payment_events import (
     PaymentInitiated,
     PaymentStatusChanged,
 )
+from crm_chatbot.domain.events.label_events import (
+    LabelCreated,
+    LabelUpdated,
+    LabelDeleted,
+    ConversationLabeled,
+    ConversationUnlabeled,
+)
+from crm_chatbot.domain.events.ticket_events import (
+    TicketCreated,
+    TicketStatusChanged,
+    TicketPriorityChanged,
+    TicketAssigned,
+    TicketResolved,
+    TicketClosed,
+    TicketReopened,
+)
 
 __all__ = [
     "DomainEvent",
@@ -39,4 +55,16 @@ __all__ = [
     "ConversationStateChanged",
     "PaymentInitiated",
     "PaymentStatusChanged",
+    "LabelCreated",
+    "LabelUpdated",
+    "LabelDeleted",
+    "ConversationLabeled",
+    "ConversationUnlabeled",
+    "TicketCreated",
+    "TicketStatusChanged",
+    "TicketPriorityChanged",
+    "TicketAssigned",
+    "TicketResolved",
+    "TicketClosed",
+    "TicketReopened",
 ]

@@ -98,28 +98,70 @@ services/ai_engine/src/ai_engine/
 
 ### CRM Chatbot Context
 
-**Aggregate Roots:** `Tenant`, `Customer`, `Product`, `Order`, `Conversation`
+**Aggregate Roots:** `Tenant`, `Customer`, `Product`, `Order`, `Conversation`, `Ticket`
 
 ```
 services/crm_chatbot/src/crm_chatbot/
 ├── domain/
 │   ├── entities/                # Tenant, Customer, Product, Order, Conversation, Payment
+│   │                            # Label, ConversationLabel, QuickReply, Ticket, TicketBoard, TicketTemplate
 │   ├── value_objects/           # TenantId, CustomerId, OrderStatus, Money, ConversationState
+│   │                            # LabelId, QuickReplyId, TicketId, TicketStatus, TicketPriority
 │   ├── events/                  # Domain events
 │   └── repositories/            # Repository interfaces
 ├── application/
 │   ├── services/                # ChatbotOrchestrator, ConversationService, OrderService
+│   │                            # LabelService, QuickReplyService
 │   ├── dto/                     # Data transfer objects
 │   └── handlers/                # WAMessageHandler
 ├── infrastructure/
 │   ├── persistence/             # SQLAlchemy repository implementations
 │   ├── messaging/               # RabbitMQ consumer/publisher
-│   ├── llm/                     # CRMLangGraphRunner, CRM agent tools
+│   ├── llm/                     # CRMLangGraphRunner, CRM agent tools (including label tools)
 │   ├── payment/                 # MidtransClient, XenditClient
 │   └── cache/                   # ConversationCache (Redis)
 └── interface/
-    ├── controllers/             # Tenant, Product, Order, Webhook controllers
+    ├── controllers/             # Tenant, Product, Order, Webhook, Label, QuickReply controllers
     └── routes/api.py
+```
+
+### Customer Service Tools (Cekat.ai-like Features)
+
+The CRM Chatbot includes customer service management tools inspired by Cekat.ai:
+
+#### Labels/Tagging System
+- **Label entity** — Categorize conversations with color-coded labels
+- **ConversationLabel** — Many-to-many association between conversations and labels
+- **AI Integration** — `label_conversation`, `get_available_labels`, `remove_label` tools
+- **Use cases** — Follow-up tracking, topic categorization, priority marking
+
+#### Quick Reply System
+- **QuickReply entity** — Template responses triggered by shortcuts (e.g., `/hello`)
+- **Category organization** — Group quick replies by category
+- **Shortcut expansion** — Expand shortcuts in messages automatically
+
+#### Ticket System
+- **Ticket aggregate** — Support ticket management with status workflow
+- **TicketStatus** — open → in_progress → pending → resolved → closed
+- **TicketPriority** — none, low, medium, high, urgent (with SLA implications)
+- **TicketBoard** — Organize tickets into boards/queues
+- **TicketTemplate** — Predefined templates for quick ticket creation
+
+```python
+# Example: Creating and labeling a conversation
+label = Label.create(
+    tenant_id=tenant_id,
+    name="Follow Up",
+    color="#e74c3c",
+    description="Needs follow-up"
+)
+
+conversation_label = ConversationLabel.create(
+    conversation_id=conversation_id,
+    label_id=label.id,
+    tenant_id=tenant_id,
+    applied_by="ai"
+)
 ```
 
 ---
@@ -519,8 +561,14 @@ docker-compose up --scale ai-engine=4
 | Order entity | `services/crm_chatbot/src/crm_chatbot/domain/entities/order.py` |
 | Product entity | `services/crm_chatbot/src/crm_chatbot/domain/entities/product.py` |
 | Conversation entity | `services/crm_chatbot/src/crm_chatbot/domain/entities/conversation.py` |
+| Label entity | `services/crm_chatbot/src/crm_chatbot/domain/entities/label.py` |
+| QuickReply entity | `services/crm_chatbot/src/crm_chatbot/domain/entities/quick_reply.py` |
+| Ticket entity | `services/crm_chatbot/src/crm_chatbot/domain/entities/ticket.py` |
 | Chatbot orchestrator | `services/crm_chatbot/src/crm_chatbot/application/services/chatbot_orchestrator.py` |
+| Label service | `services/crm_chatbot/src/crm_chatbot/application/services/label_service.py` |
+| QuickReply service | `services/crm_chatbot/src/crm_chatbot/application/services/quick_reply_service.py` |
 | CRM LangGraph runner | `services/crm_chatbot/src/crm_chatbot/infrastructure/llm/crm_langgraph_runner.py` |
 | CRM agent tools | `services/crm_chatbot/src/crm_chatbot/infrastructure/llm/tools/` |
+| Label tools | `services/crm_chatbot/src/crm_chatbot/infrastructure/llm/tools/label_tools.py` |
 | Midtrans client | `services/crm_chatbot/src/crm_chatbot/infrastructure/payment/midtrans_client.py` |
 | WA message handler | `services/crm_chatbot/src/crm_chatbot/application/handlers/wa_message_handler.py` |

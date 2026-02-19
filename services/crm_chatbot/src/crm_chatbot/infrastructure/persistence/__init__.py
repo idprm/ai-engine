@@ -13,6 +13,9 @@ from crm_chatbot.infrastructure.persistence.models import (
     OrderModel,
     OrderItemModel,
     PaymentModel,
+    LabelModel,
+    ConversationLabelModel,
+    QuickReplyModel,
 )
 
 __all__ = [
@@ -26,4 +29,7 @@ __all__ = [
     "OrderModel",
     "OrderItemModel",
     "PaymentModel",
+    "LabelModel",
+    "ConversationLabelModel",
+    "QuickReplyModel",
 ]

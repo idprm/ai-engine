@@ -4,10 +4,14 @@ from crm_chatbot.application.services.chatbot_orchestrator import ChatbotOrchest
 from crm_chatbot.application.services.conversation_service import ConversationService
 from crm_chatbot.application.services.order_service import OrderService
 from crm_chatbot.application.services.customer_service import CustomerService
+from crm_chatbot.application.services.label_service import LabelService
+from crm_chatbot.application.services.quick_reply_service import QuickReplyService
 
 __all__ = [
     "ChatbotOrchestrator",
     "ConversationService",
     "OrderService",
     "CustomerService",
+    "LabelService",
+    "QuickReplyService",
 ]
