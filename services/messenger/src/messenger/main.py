@@ -1,4 +1,4 @@
-"""WAHA Sender service main entry point."""
+"""Messenger service main entry point."""
 import asyncio
 import logging
 import signal
@@ -77,7 +77,7 @@ async def check_waha_connection():
 async def run_worker():
     """Main worker loop."""
     settings = get_settings()
-    logger.info(f"Starting {settings.app_name} WAHA Sender in {settings.app_env} mode")
+    logger.info(f"Starting {settings.app_name} Messenger in {settings.app_env} mode")
 
     # Check WAHA connection
     await check_waha_connection()
@@ -95,7 +95,7 @@ async def run_worker():
         queue_name=settings.rabbitmq_wa_queue,
     )
 
-    logger.info("WAHA Sender worker started, waiting for messages...")
+    logger.info("Messenger worker started, waiting for messages...")
 
     try:
         await _consumer.consume(handler=message_handler.handle)
@@ -108,7 +108,7 @@ async def run_worker():
 
 async def shutdown():
     """Cleanup on shutdown."""
-    logger.info("Shutting down WAHA Sender...")
+    logger.info("Shutting down Messenger...")
 
     global _consumer, _cache, _waha_client
 
@@ -122,7 +122,7 @@ async def shutdown():
     if _cache:
         await _cache.disconnect()
 
-    logger.info("WAHA Sender shutdown complete")
+    logger.info("Messenger shutdown complete")
 
 
 def signal_handler(loop):

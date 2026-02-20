@@ -109,7 +109,7 @@ class WAService:
             )
 
             # Store mapping of job_id -> chat_id for response routing
-            # This will be used by waha-sender to know where to send the response
+            # This will be used by Messenger to know where to send the response
             await self._store_job_mapping(
                 job_id=job_status.job_id,
                 chat_id=str(chat_id),
@@ -141,7 +141,7 @@ class WAService:
         """Store job to chat mapping for response routing.
 
         This uses the job service's cache to store the mapping.
-        The waha-sender service will read this to know where to send responses.
+        The Messenger service will read this to know where to send responses.
         """
         mapping = {
             "job_id": job_id,
@@ -149,13 +149,13 @@ class WAService:
             "session": session,
             "source_message_id": source_message_id,
         }
-        # Publish to WA queue for waha-sender to consume
+        # Publish to WA queue for Messenger to consume
         await self._wa_publisher.publish_wa_message(mapping)
 
     async def send_message(self, dto: WAOutgoingMessageDTO) -> None:
         """Queue an outgoing message for sending.
 
-        This publishes the message to the WA queue for waha-sender to process.
+        This publishes the message to the WA queue for Messenger to process.
         """
         await self._wa_publisher.publish_wa_message(dto.to_dict())
         logger.info(f"Queued WA message to {dto.chat_id}")

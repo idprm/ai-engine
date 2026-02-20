@@ -1,4 +1,4 @@
-"""SQLAlchemy ORM models for AI Engine service."""
+"""SQLAlchemy ORM models for LLM Worker service."""
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text

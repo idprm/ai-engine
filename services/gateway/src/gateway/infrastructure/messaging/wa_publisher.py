@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class WAMessagePublisher:
     """RabbitMQ publisher for WhatsApp messages.
 
-    Publishes messages to the WA queue for waha-sender to consume.
+    Publishes messages to the WA queue for Messenger to consume.
     """
 
     def __init__(self, url: str | None = None, queue_name: str | None = None):

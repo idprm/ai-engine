@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class RabbitMQPublisher:
     """RabbitMQ publisher for task messages.
 
-    Publishes messages to the task queue for AI Engine to consume.
+    Publishes messages to the task queue for LLM Worker to consume.
     """
 
     def __init__(self, url: str | None = None, queue_name: str | None = None):

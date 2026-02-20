@@ -41,7 +41,7 @@ async def health_check():
 async def submit_job(request: SubmitJobRequest):
     """Submit a new job for AI processing.
 
-    Creates a new job and queues it for processing by the AI Engine.
+    Creates a new job and queues it for processing by the LLM Worker.
     Returns immediately with a job ID for status polling.
     """
     controller = get_job_controller()
@@ -116,7 +116,7 @@ async def handle_wa_webhook(
 async def send_wa_message(request: WASendMessageRequest):
     """Queue a WhatsApp message for sending.
 
-    This endpoint queues a message to be sent via the waha-sender service.
+    This endpoint queues a message to be sent via the Messenger service.
     The message will be delivered asynchronously.
     """
     controller = get_wa_controller()

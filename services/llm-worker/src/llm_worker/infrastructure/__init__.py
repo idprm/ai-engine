@@ -1,4 +1,4 @@
-"""AI Engine infrastructure layer."""
+"""LLM Worker infrastructure layer."""
 from llm_worker.infrastructure.persistence import (
     LLMConfigRepositoryImpl,
     PromptTemplateRepositoryImpl,

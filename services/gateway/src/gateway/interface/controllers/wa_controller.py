@@ -113,7 +113,7 @@ class WAController:
             )
 
     async def send_message(self, request: WASendMessageRequest) -> WASendMessageResponse:
-        """Queue a message for sending via waha-sender.
+        """Queue a message for sending via Messenger.
 
         Args:
             request: Message send request.

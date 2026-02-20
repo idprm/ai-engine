@@ -68,7 +68,7 @@ class WAMessageDTO:
 
 @dataclass
 class WAOutgoingMessageDTO:
-    """DTO for outgoing WhatsApp message to be sent via waha-sender."""
+    """DTO for outgoing WhatsApp message to be sent via Messenger."""
     chat_id: str
     text: str
     session: str = "default"

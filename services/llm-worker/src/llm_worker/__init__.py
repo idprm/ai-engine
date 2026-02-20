@@ -1,1 +1,1 @@
-"""AI Engine service - Worker consuming RabbitMQ, running LangGraph pipelines."""
+"""LLM Worker service - Worker consuming RabbitMQ, running LangGraph pipelines."""

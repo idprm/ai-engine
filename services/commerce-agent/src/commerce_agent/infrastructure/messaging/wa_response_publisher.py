@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class WAResponsePublisher:
     """Publisher for WhatsApp response messages.
 
-    Publishes messages to the 'wa_messages' queue for the WAHA Sender
+    Publishes messages to the 'wa_messages' queue for the Messenger
     service to send via WhatsApp.
     """
 

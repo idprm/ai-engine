@@ -1,4 +1,4 @@
-"""Domain events for AI Engine bounded context."""
+"""Domain events for LLM Worker bounded context."""
 from llm_worker.domain.events.processing_events import (
     ProcessingStarted,
     ProcessingCompleted,

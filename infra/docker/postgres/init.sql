@@ -270,7 +270,7 @@ CREATE INDEX IF NOT EXISTS idx_tickets_assignee ON tickets(assignee_id);
 CREATE INDEX IF NOT EXISTS idx_ticket_templates_tenant ON ticket_templates(tenant_id);
 
 -- =====================================================
--- AI Engine Indexes
+-- LLM Worker Indexes
 -- =====================================================
 
 CREATE INDEX IF NOT EXISTS idx_llm_configs_name ON llm_configs(name);

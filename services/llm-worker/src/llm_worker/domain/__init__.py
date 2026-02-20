@@ -1,4 +1,4 @@
-"""AI Engine domain layer."""
+"""LLM Worker domain layer."""
 from llm_worker.domain.entities import LLMConfig, PromptTemplate
 from llm_worker.domain.value_objects import Provider, ModelName, Temperature
 from llm_worker.domain.repositories import LLMConfigRepository, PromptTemplateRepository

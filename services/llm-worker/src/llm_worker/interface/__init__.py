@@ -1,1 +1,1 @@
-"""AI Engine interface layer."""
+"""LLM Worker interface layer."""

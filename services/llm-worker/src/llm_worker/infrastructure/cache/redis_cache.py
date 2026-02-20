@@ -1,4 +1,4 @@
-"""Redis cache client implementation for AI Engine."""
+"""Redis cache client implementation for LLM Worker."""
 import json
 import logging
 from typing import Any
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class RedisCache:
-    """Redis cache client for AI Engine.
+    """Redis cache client for LLM Worker.
 
     Used for updating job status after processing.
     """

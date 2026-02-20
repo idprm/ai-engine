@@ -1,4 +1,4 @@
-"""AI Engine service main entry point."""
+"""LLM Worker service main entry point."""
 import asyncio
 import logging
 import signal
@@ -52,7 +52,7 @@ async def create_processing_service() -> ProcessingService:
 async def run_worker():
     """Main worker loop."""
     settings = get_settings()
-    logger.info(f"Starting {settings.app_name} AI Engine in {settings.app_env} mode")
+    logger.info(f"Starting {settings.app_name} LLM Worker in {settings.app_env} mode")
 
     # Create processing service
     processing_service = await create_processing_service()
@@ -67,7 +67,7 @@ async def run_worker():
         queue_name=settings.rabbitmq_task_queue,
     )
 
-    logger.info("AI Engine worker started, waiting for tasks...")
+    logger.info("LLM Worker worker started, waiting for tasks...")
 
     try:
         await _consumer.consume(handler=message_handler.handle)
@@ -80,7 +80,7 @@ async def run_worker():
 
 async def shutdown():
     """Cleanup on shutdown."""
-    logger.info("Shutting down AI Engine...")
+    logger.info("Shutting down LLM Worker...")
 
     global _consumer, _cache
 
@@ -91,7 +91,7 @@ async def shutdown():
     if _cache:
         await _cache.disconnect()
 
-    logger.info("AI Engine shutdown complete")
+    logger.info("LLM Worker shutdown complete")
 
 
 def signal_handler(loop):
