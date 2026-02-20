@@ -1,1 +1,1 @@
-"""Application layer for CRM chatbot."""
+"""Application layer for Commerce Agent."""

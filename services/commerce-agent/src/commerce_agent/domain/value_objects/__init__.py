@@ -1,4 +1,4 @@
-"""Value objects for CRM chatbot domain."""
+"""Value objects for Commerce Agent domain."""
 
 from commerce_agent.domain.value_objects.tenant_id import TenantId
 from commerce_agent.domain.value_objects.customer_id import CustomerId

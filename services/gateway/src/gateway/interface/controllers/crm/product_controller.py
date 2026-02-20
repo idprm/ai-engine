@@ -1,7 +1,7 @@
 """Product controller for CRM API endpoints.
 
 This controller handles product management operations that were migrated
-from the CRM chatbot service.
+from the Commerce Agent service.
 """
 import logging
 from typing import Optional

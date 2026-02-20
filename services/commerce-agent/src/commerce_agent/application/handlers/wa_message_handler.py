@@ -5,6 +5,7 @@ from typing import Any
 
 from commerce_agent.application.services.chatbot_orchestrator import ChatbotOrchestrator
 from commerce_agent.infrastructure.cache.message_buffer import MessageBuffer
+from commerce_agent.infrastructure.cache.message_dedup import MessageDeduplication
 from commerce_agent.infrastructure.location import LocationExtractor
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,7 @@ class WAMessageHandler:
         orchestrator: ChatbotOrchestrator,
         message_buffer: MessageBuffer | None = None,
         location_extractor: LocationExtractor | None = None,
+        message_dedup: MessageDeduplication | None = None,
     ):
         """Initialize the handler.
 
@@ -36,10 +38,12 @@ class WAMessageHandler:
             orchestrator: The chatbot orchestrator instance.
             message_buffer: Optional message buffer for batching messages.
             location_extractor: Optional location extractor for processing location data.
+            message_dedup: Optional message deduplication service.
         """
         self._orchestrator = orchestrator
         self._buffer = message_buffer
         self._location_extractor = location_extractor
+        self._dedup = message_dedup
 
     async def handle_webhook(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Handle a WhatsApp webhook payload.
@@ -98,6 +102,20 @@ class WAMessageHandler:
                 "type": message_type,
                 "tenant_id": payload.get("tenant_id"),
             }
+
+            # Check for duplicate messages (before any processing)
+            if self._dedup:
+                is_duplicate = await self._dedup.check_and_mark(
+                    tenant_id=payload.get("tenant_id", ""),
+                    chat_id=chat_id,
+                    message_id=message_id,
+                )
+                if is_duplicate:
+                    return {
+                        "status": "duplicate",
+                        "message_id": message_id,
+                        "chat_id": chat_id,
+                    }
 
             # Handle location messages
             if message_type == "location":

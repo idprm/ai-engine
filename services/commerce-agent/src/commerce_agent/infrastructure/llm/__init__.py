@@ -1,4 +1,4 @@
-"""LLM infrastructure for CRM chatbot."""
+"""LLM infrastructure for Commerce Agent."""
 
 from commerce_agent.infrastructure.llm.crm_agent_state import CRMAgentState, create_crm_initial_state
 from commerce_agent.infrastructure.llm.crm_langgraph_runner import CRMLangGraphRunner

@@ -1,6 +1,6 @@
 """CRM controllers for Gateway service.
 
-These controllers were migrated from the CRM chatbot service to consolidate
+These controllers were migrated from the Commerce Agent service to consolidate
 all HTTP API handling in the Gateway service.
 """
 

@@ -46,10 +46,14 @@ class Settings(BaseSettings):
     # Xendit Payment Gateway (optional)
     xendit_secret_key: str = ""
 
-    # Message Buffer Settings (for CRM chatbot)
+    # Message Buffer Settings (for Commerce Agent)
     message_buffer_initial_delay: float = 2.0
     message_buffer_max_delay: float = 10.0
     buffer_flush_interval: float = 0.5
+
+    # Message Deduplication Settings (for Commerce Agent)
+    message_dedup_enabled: bool = True
+    message_dedup_ttl: int = 300  # 5 minutes default
 
     # LLM Provider API Keys (env var names, not actual keys)
     openai_api_key: str | None = None

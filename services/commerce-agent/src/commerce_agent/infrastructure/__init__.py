@@ -1,1 +1,1 @@
-"""Infrastructure layer for CRM chatbot."""
+"""Infrastructure layer for Commerce Agent."""

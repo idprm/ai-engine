@@ -1,6 +1,6 @@
-"""CRM Chatbot Worker - Background message processor.
+"""Commerce Agent Worker - Background message processor.
 
-This is the main entry point for the CRM chatbot worker service.
+This is the main entry point for the Commerce Agent worker service.
 It consumes messages from the CRM task queue and processes them using
 the AI agent and messaging infrastructure.
 
@@ -27,6 +27,7 @@ from commerce_agent.infrastructure.messaging.crm_task_consumer import CRMTaskCon
 from commerce_agent.infrastructure.messaging.wa_response_publisher import WAResponsePublisher
 from commerce_agent.infrastructure.messaging.buffer_flush_worker import BufferFlushWorker
 from commerce_agent.infrastructure.cache.message_buffer import MessageBuffer
+from commerce_agent.infrastructure.cache.message_dedup import MessageDeduplication
 from commerce_agent.infrastructure.payment.midtrans_client import MidtransClient
 from commerce_agent.infrastructure.llm import CRMLangGraphRunner
 from commerce_agent.application.services import (
@@ -48,7 +49,7 @@ logger = logging.getLogger(__name__)
 async def main():
     """Main worker entry point."""
     settings = get_settings()
-    logger.info("Starting CRM Chatbot Worker...")
+    logger.info("Starting Commerce Agent Worker...")
 
     # Global instances
     redis_client: Redis | None = None
@@ -139,10 +140,19 @@ async def main():
         )
         logger.info("Message buffer initialized")
 
+        # Initialize message deduplication
+        message_dedup = MessageDeduplication(
+            redis=redis_client,
+            ttl=getattr(settings, "message_dedup_ttl", 300),
+            enabled=getattr(settings, "message_dedup_enabled", True),
+        )
+        logger.info("Message deduplication initialized")
+
         # Initialize message handler with buffering
         message_handler = WAMessageHandler(
             orchestrator=orchestrator,
             message_buffer=message_buffer,
+            message_dedup=message_dedup,
         )
 
         # Initialize buffer flush worker
@@ -166,7 +176,7 @@ async def main():
         )
         consumer_task = asyncio.create_task(task_consumer.start())
 
-        logger.info("CRM Chatbot Worker started successfully")
+        logger.info("Commerce Agent Worker started successfully")
         logger.info("Waiting for messages...")
 
         # Wait for shutdown signal
@@ -178,7 +188,7 @@ async def main():
 
     finally:
         # Cleanup
-        logger.info("Shutting down CRM Chatbot Worker...")
+        logger.info("Shutting down Commerce Agent Worker...")
 
         if buffer_flush_worker:
             await buffer_flush_worker.stop()
@@ -210,7 +220,7 @@ async def main():
             await redis_client.close()
             logger.info("Redis client closed")
 
-        logger.info("CRM Chatbot Worker stopped")
+        logger.info("Commerce Agent Worker stopped")
 
 
 if __name__ == "__main__":

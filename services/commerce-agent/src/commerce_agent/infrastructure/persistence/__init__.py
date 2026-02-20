@@ -1,4 +1,4 @@
-"""Persistence layer for CRM chatbot."""
+"""Persistence layer for Commerce Agent."""
 
 from commerce_agent.infrastructure.persistence.database import (
     get_db_session,

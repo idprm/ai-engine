@@ -1,4 +1,4 @@
-"""Domain entities for CRM chatbot."""
+"""Domain entities for Commerce Agent."""
 
 from commerce_agent.domain.entities.tenant import Tenant
 from commerce_agent.domain.entities.customer import Customer

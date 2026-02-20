@@ -1,4 +1,4 @@
-"""Controllers for CRM chatbot API."""
+"""Controllers for Commerce Agent API."""
 
 from commerce_agent.interface.controllers.tenant_controller import TenantController
 from commerce_agent.interface.controllers.product_controller import ProductController

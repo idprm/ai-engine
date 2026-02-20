@@ -1,4 +1,4 @@
-"""SQLAlchemy models for CRM chatbot persistence."""
+"""SQLAlchemy models for Commerce Agent persistence."""
 from datetime import datetime
 from typing import Any
 from uuid import UUID, uuid4

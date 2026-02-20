@@ -1,7 +1,7 @@
 """CRM routes for Gateway service.
 
 This module defines the API routes for CRM functionality that was migrated
-from the CRM chatbot service.
+from the Commerce Agent service.
 """
 
 from fastapi import APIRouter

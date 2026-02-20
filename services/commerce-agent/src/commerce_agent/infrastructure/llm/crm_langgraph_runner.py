@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class CRMLangGraphRunner:
-    """Runner for executing CRM chatbot AI pipelines with LangGraph.
+    """Runner for executing Commerce Agent AI pipelines with LangGraph.
 
     Creates and executes a tool-calling agent that:
     1. Analyzes the user's message and conversation context
@@ -41,7 +41,7 @@ class CRMLangGraphRunner:
         conversation_state: str = "greeting",
         conversation_history: list[dict[str, str]] | None = None,
     ) -> tuple[str, int, dict[str, Any]]:
-        """Run the CRM chatbot agent pipeline.
+        """Run the Commerce Agent pipeline.
 
         Args:
             config: LLM configuration entity.

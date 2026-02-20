@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 class ChatbotOrchestrator:
-    """Main orchestrator for CRM chatbot processing.
+    """Main orchestrator for Commerce Agent processing.
 
     Coordinates between:
     - WhatsApp message handling

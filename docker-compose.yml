@@ -111,7 +111,7 @@ services:
     deploy:
       replicas: 2
 
-  # Commerce Agent Service - WhatsApp commerce/CRM chatbot
+  # Commerce Agent Service - WhatsApp commerce/Commerce Agent
   commerce-agent:
     build:
       context: .

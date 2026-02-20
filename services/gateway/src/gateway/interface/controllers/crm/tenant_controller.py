@@ -1,7 +1,7 @@
 """Tenant controller for CRM API endpoints.
 
 This controller handles tenant management operations that were migrated
-from the CRM chatbot service.
+from the Commerce Agent service.
 """
 import logging
 

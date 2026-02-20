@@ -1,4 +1,4 @@
-"""Messaging infrastructure for CRM chatbot."""
+"""Messaging infrastructure for Commerce Agent."""
 
 from commerce_agent.infrastructure.messaging.crm_task_consumer import CRMTaskConsumer
 from commerce_agent.infrastructure.messaging.wa_response_publisher import WAResponsePublisher

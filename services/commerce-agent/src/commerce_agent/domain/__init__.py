@@ -1,1 +1,1 @@
-"""Domain layer for CRM chatbot bounded context."""
+"""Domain layer for Commerce Agent bounded context."""

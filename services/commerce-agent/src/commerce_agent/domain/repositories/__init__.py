@@ -1,4 +1,4 @@
-"""Repository interfaces for CRM chatbot domain."""
+"""Repository interfaces for Commerce Agent domain."""
 
 from commerce_agent.domain.repositories.tenant_repository import TenantRepository
 from commerce_agent.domain.repositories.customer_repository import CustomerRepository

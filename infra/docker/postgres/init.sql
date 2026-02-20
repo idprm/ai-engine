@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS prompt_templates (
 );
 
 -- =====================================================
--- CRM Chatbot Tables
+-- Commerce Agent Tables
 -- =====================================================
 
 -- Tenants table (multi-tenant businesses)
@@ -306,8 +306,8 @@ INSERT INTO prompt_templates (name, content, description) VALUES
     ('fallback-agent', 'You are a backup assistant. Provide simple, safe, and helpful responses when the primary system encounters issues. Be polite and offer to help with alternative approaches.', 'Fallback agent for error recovery'),
     ('followup-agent', 'You are a conversational assistant specialized in handling follow-up questions. Maintain context from previous messages and provide coherent, connected responses. Help users explore topics in depth.', 'Agent for conversation continuity'),
     ('moderation-agent', 'You are a content moderation assistant. Analyze messages for potential policy violations including harassment, hate speech, self-harm, sexual content, violence, and spam. Respond with structured assessments.', 'Agent for content moderation'),
-    -- CRM Chatbot prompts
-    ('crm-default', 'You are a helpful customer service assistant for a WhatsApp-based business. Help customers with product inquiries, orders, and payments. Be friendly, professional, and efficient.', 'Default CRM chatbot prompt')
+    -- Commerce Agent prompts
+    ('crm-default', 'You are a helpful customer service assistant for a WhatsApp-based business. Help customers with product inquiries, orders, and payments. Be friendly, professional, and efficient.', 'Default Commerce Agent prompt')
 ON CONFLICT (name) DO NOTHING;
 
 -- Insert a demo tenant for testing

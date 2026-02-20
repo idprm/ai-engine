@@ -20,7 +20,7 @@ _crm_publisher: "CRMTaskPublisher | None" = None
 
 
 class CRMTaskPublisher:
-    """Publisher for CRM chatbot processing tasks.
+    """Publisher for Commerce Agent processing tasks.
 
     This publisher sends messages to the crm_tasks queue which is consumed
     by the CRM worker service for processing.

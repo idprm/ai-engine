@@ -1,4 +1,4 @@
-"""Data Transfer Objects for CRM chatbot."""
+"""Data Transfer Objects for Commerce Agent."""
 
 from commerce_agent.application.dto.message_dto import (
     WhatsAppMessageDTO,

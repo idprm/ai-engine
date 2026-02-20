@@ -1,4 +1,4 @@
-"""Domain events for CRM chatbot bounded context."""
+"""Domain events for Commerce Agent bounded context."""
 
 from shared.events import DomainEvent
 

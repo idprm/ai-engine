@@ -1,7 +1,7 @@
 """Webhook controller for CRM API endpoints.
 
 This controller handles WhatsApp and payment webhook callbacks that were migrated
-from the CRM chatbot service. It publishes webhook events to the CRM worker queue
+from the Commerce Agent service. It publishes webhook events to the CRM worker queue
 for processing.
 """
 import logging

@@ -1,4 +1,4 @@
-"""Application services for CRM chatbot."""
+"""Application services for Commerce Agent."""
 
 from commerce_agent.application.services.chatbot_orchestrator import ChatbotOrchestrator
 from commerce_agent.application.services.conversation_service import ConversationService

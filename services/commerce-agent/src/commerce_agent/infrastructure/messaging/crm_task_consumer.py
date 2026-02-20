@@ -1,4 +1,4 @@
-"""RabbitMQ consumer for CRM chatbot tasks."""
+"""RabbitMQ consumer for Commerce Agent tasks."""
 import asyncio
 import json
 import logging
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class CRMTaskConsumer:
-    """Consumer for CRM chatbot task messages from RabbitMQ.
+    """Consumer for Commerce Agent task messages from RabbitMQ.
 
     Listens on the 'crm_tasks' queue for incoming WhatsApp messages
     that need to be processed by the chatbot.
