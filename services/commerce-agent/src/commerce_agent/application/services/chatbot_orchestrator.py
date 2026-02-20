@@ -20,6 +20,7 @@ from commerce_agent.infrastructure.llm.tools import (
     customer_tools,
     payment_tools,
 )
+from commerce_agent.infrastructure.location import LocationExtractor
 from commerce_agent.infrastructure.messaging import WAResponsePublisher
 from llm_worker.domain.repositories import LLMConfigRepository
 
@@ -49,6 +50,7 @@ class ChatbotOrchestrator:
         payment_client,
         llm_runner: CRMLangGraphRunner,
         response_publisher: WAResponsePublisher,
+        location_extractor: LocationExtractor | None = None,
     ):
         self._tenant_repository = tenant_repository
         self._customer_service = customer_service
@@ -61,6 +63,7 @@ class ChatbotOrchestrator:
         self._payment_client = payment_client
         self._llm_runner = llm_runner
         self._response_publisher = response_publisher
+        self._location_extractor = location_extractor
 
         # Register tool executors
         self._register_tool_executors()
@@ -170,7 +173,10 @@ class ChatbotOrchestrator:
         Returns:
             ChatbotResponseDTO with the response.
         """
-        logger.info(f"Processing message from {message.chat_id}: {message.text[:50]}...")
+        logger.info(
+            f"Processing message from {message.chat_id}: "
+            f"{message.text[:50] if message.text else '[location message]'}..."
+        )
 
         try:
             # 1. Get tenant by WA session
@@ -206,21 +212,55 @@ class ChatbotOrchestrator:
                 wa_chat_id=message.chat_id,
             )
 
-            # 4. Add user message to conversation
+            # 4. Process location data if present
+            location_context = None
+            if message.location and self._location_extractor:
+                location_context = await self._location_extractor.extract_address_from_message(
+                    text=message.text,
+                    location_data=message.location,
+                )
+                if location_context:
+                    logger.info(
+                        f"Extracted location for {message.chat_id}: "
+                        f"{location_context.get('formatted_address', 'unknown')}"
+                    )
+
+            # 5. Build user message text
+            user_message = message.text or ""
+            if location_context:
+                location_text = location_context.get("formatted_address", "Unknown location")
+                if not user_message:
+                    # Location-only message
+                    user_message = f"[Customer shared their location: {location_text}]"
+                else:
+                    # Text message with location
+                    user_message = f"{user_message}\n\n[Location detected: {location_text}]"
+
+            # 6. Add user message to conversation
             await self._conversation_service.add_message(
                 conversation_id=conversation.id,
                 role="user",
-                content=message.text,
-                metadata={"message_id": message.message_id},
+                content=user_message,
+                metadata={
+                    "message_id": message.message_id,
+                    "message_type": message.message_type,
+                    "location": location_context,
+                },
             )
 
-            # 5. Get conversation history for context
+            # 7. Get conversation history for context
             history = await self._conversation_service.get_message_history(conversation.id)
 
-            # 6. Get customer context
+            # 8. Get customer context
             customer_context = await self._customer_service.get_customer_context(customer.id)
 
-            # 7. Get LLM config
+            # 9. Enhance context with location information
+            enhanced_context = {
+                **customer_context,
+                "shared_location": location_context,
+            }
+
+            # 10. Get LLM config
             llm_config = await self._llm_config_repository.get_by_name(tenant.llm_config_name)
 
             if not llm_config:
@@ -231,25 +271,25 @@ class ChatbotOrchestrator:
                     conversation_state=conversation.state.value,
                 )
 
-            # 8. Run AI agent
+            # 11. Run AI agent
             response_text, tokens_used, metadata = await self._llm_runner.run(
                 config=llm_config,
                 system_prompt=tenant.agent_prompt,
                 tenant_id=str(tenant.id),
                 customer_id=customer.id,
                 conversation_id=conversation.id,
-                user_message=message.text,
-                customer_context=customer_context,
+                user_message=user_message,
+                customer_context=enhanced_context,
                 conversation_state=conversation.state.value,
                 conversation_history=history,
             )
 
-            # 9. Update conversation state if changed
+            # 12. Update conversation state if changed
             new_state = metadata.get("conversation_state")
             if new_state and new_state != conversation.state.value:
                 await self._conversation_service.update_state(conversation.id, new_state)
 
-            # 10. Add assistant response to conversation
+            # 13. Add assistant response to conversation
             await self._conversation_service.add_message(
                 conversation_id=conversation.id,
                 role="assistant",
@@ -257,7 +297,7 @@ class ChatbotOrchestrator:
                 metadata={"tokens": tokens_used},
             )
 
-            # 11. Return response
+            # 14. Return response
             return ChatbotResponseDTO(
                 response_text=response_text,
                 conversation_id=conversation.id,
@@ -265,7 +305,10 @@ class ChatbotOrchestrator:
                 intent=metadata.get("intent"),
                 tokens_used=tokens_used,
                 tools_used=metadata.get("tools_used", []),
-                metadata=metadata,
+                metadata={
+                    **metadata,
+                    "location_processed": location_context is not None,
+                },
             )
 
         except Exception as e:
@@ -291,8 +334,10 @@ class ChatbotOrchestrator:
             wa_session=message_data.get("wa_session", ""),
             chat_id=message_data.get("chat_id", ""),
             phone_number=message_data.get("phone_number"),
-            text=message_data.get("text", ""),
+            text=message_data.get("text"),
             metadata=message_data.get("metadata", {}),
+            location=message_data.get("location"),
+            message_type=message_data.get("message_type", "text"),
         )
 
         # Process message
@@ -308,6 +353,7 @@ class ChatbotOrchestrator:
                     "conversation_id": response.conversation_id,
                     "intent": response.intent,
                     "tools_used": response.tools_used,
+                    "location_processed": response.metadata.get("location_processed", False),
                 },
             )
 

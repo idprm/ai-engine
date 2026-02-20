@@ -12,9 +12,19 @@ class WhatsAppMessageDTO(BaseModel):
     wa_session: str = Field(..., description="WAHA session name")
     chat_id: str = Field(..., description="WhatsApp chat ID")
     phone_number: str | None = Field(None, description="Sender phone number")
-    text: str = Field(..., description="Message text content")
+    text: str | None = Field(None, description="Message text content (optional for location messages)")
     timestamp: datetime | None = Field(None, description="Message timestamp")
     metadata: dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
+
+    # Location fields for WhatsApp location messages
+    location: dict[str, Any] | None = Field(
+        None,
+        description="Location data with latitude, longitude, and optional address"
+    )
+    message_type: str = Field(
+        default="text",
+        description="Message type: text, location, image, etc."
+    )
 
 
 class WhatsAppResponseDTO(BaseModel):

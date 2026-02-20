@@ -13,6 +13,7 @@ A scalable AI processing platform built with **Domain-Driven Design (DDD)** arch
 - **LangGraph Integration** — Stateful, multi-step agent workflows with tool-calling
 - **Multi-Agent Architecture** — Specialized agents (Main, Fallback, Followup, Moderation) with intelligent routing
 - **WhatsApp Commerce Agent** — Multi-tenant customer service with product catalog, orders, and payments
+- **Location Extraction** — Process WhatsApp location messages and Google Maps links for delivery addresses
 - **Payment Integration** — Midtrans and Xendit payment gateway support
 - **Customer Service Tools** — Labels/Tagging, Quick Replies, Ticket System for support management
 - **High Performance** — SQLAlchemy 2.0 with asyncpg, Redis caching, connection pooling
@@ -181,6 +182,7 @@ ai-platform/
 │           │   ├── persistence/    # SQLAlchemy repositories
 │           │   ├── messaging/      # RabbitMQ consumer/publisher
 │           │   ├── llm/            # CRMLangGraphRunner, tools
+│           │   ├── location/       # Location extraction, geocoding
 │           │   ├── payment/        # Midtrans, Xendit clients
 │           │   └── cache/          # Conversation cache
 │           └── interface/          # (DEPRECATED - routes moved to Gateway)
@@ -524,6 +526,7 @@ HTTP /v1/crm/quick-replies/*
 - **Product Catalog** — Search products, check stock, get details
 - **Order Management** — Create orders, add items, track status, cancel
 - **Payment Integration** — Midtrans and Xendit payment gateways
+- **Location Extraction** — Process WhatsApp location messages and Google Maps links
 - **AI-Powered Responses** — LangGraph agent with domain tools
 
 ### CRM Agent Tools
@@ -543,6 +546,27 @@ HTTP /v1/crm/quick-replies/*
 | `label_conversation` | Apply label to conversation for categorization |
 | `get_available_labels` | Get all available labels for tenant |
 | `remove_label` | Remove label from conversation |
+
+### Location Extraction
+
+The Commerce Agent can extract addresses from customer messages:
+
+| Source | Description |
+|--------|-------------|
+| **WhatsApp Location** | Process location messages with coordinates |
+| **Google Maps URLs** | Extract coordinates from `maps.google.com/?q=...` links |
+| **Short URLs** | Expand `goo.gl/maps/...` and `maps.app.goo.gl/...` links |
+
+When a customer shares their location, the agent:
+1. Extracts coordinates from the message
+2. Performs reverse geocoding via Google Geocoding API (if configured)
+3. Passes the address to the AI agent context
+4. The agent can use `update_customer_profile` to save the delivery address
+
+**Configuration:**
+```bash
+GOOGLE_GEOCODING_API_KEY=your-api-key-here
+```
 
 ### Conversation States
 
@@ -820,6 +844,8 @@ docker push your-username/ai-platform-commerce-agent:latest
 | `MIDTRANS_SERVER_KEY` | Midtrans server key |
 | `MIDTRANS_IS_PRODUCTION` | Use Midtrans production mode |
 | `CONVERSATION_TTL` | Conversation cache TTL (seconds) |
+| **Location Extraction** | |
+| `GOOGLE_GEOCODING_API_KEY` | Google Geocoding API key for reverse geocoding |
 | **LLM Resilience** | |
 | `LLM_DEFAULT_TIMEOUT_SECONDS` | Default timeout for LLM calls (default: 120) |
 | `LLM_MAX_RETRIES` | Max retry attempts per LLM call (default: 3) |

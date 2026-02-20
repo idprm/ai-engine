@@ -153,6 +153,7 @@ services/commerce-agent/src/commerce_agent/
 │   ├── persistence/             # SQLAlchemy repository implementations (imported by Gateway)
 │   ├── messaging/               # RabbitMQ consumer/publisher
 │   ├── llm/                     # CRMLangGraphRunner, CRM agent tools
+│   ├── location/                # LocationExtractor, GeocodingClient
 │   ├── payment/                 # MidtransClient, XenditClient (imported by Gateway)
 │   └── cache/                   # ConversationCache (Redis)
 └── interface/                   # DEPRECATED - controllers moved to Gateway
@@ -241,6 +242,39 @@ conversation_label = ConversationLabel.create(
     applied_by="ai"
 )
 ```
+
+#### Location Extraction
+
+The Commerce Agent can extract addresses from WhatsApp messages:
+
+- **WhatsApp Location Messages** — Process location sharing with latitude/longitude
+- **Google Maps URLs** — Extract coordinates from `maps.google.com/?q=...` links
+- **Shortened URLs** — Expand `goo.gl/maps/...` and `maps.app.goo.gl/...` links
+- **Reverse Geocoding** — Convert coordinates to readable addresses via Google Geocoding API
+
+```python
+# Location extraction flow
+WAMessageHandler
+    │
+    ├── message_type == "location"
+    │   └── Extract lat/lng from WhatsApp location message
+    │
+    └── message_type == "text"
+        └── Check for Google Maps URLs
+            └── LocationExtractor.extract_google_maps_url()
+
+LocationExtractor.extract_address_from_message()
+    │
+    ├── Process WhatsApp location data
+    │   └── GeocodingClient.reverse_geocode()
+    │
+    └── Return formatted address
+        │
+        └── ChatbotOrchestrator
+            └── Pass "shared_location" to AI agent context
+```
+
+The extracted location is passed to the AI agent as `shared_location` in the customer context, allowing the agent to use `update_customer_profile` to save delivery addresses.
 
 ---
 
@@ -718,6 +752,8 @@ GitHub Actions workflow at `.github/workflows/docker.yml`:
 | `MIDTRANS_SERVER_KEY` | CRM | Midtrans server key |
 | `MIDTRANS_IS_PRODUCTION` | CRM | Midtrans production mode |
 | `CONVERSATION_TTL` | CRM | Conversation cache TTL (seconds) |
+| **Location Extraction** | | |
+| `GOOGLE_GEOCODING_API_KEY` | CRM | Google Geocoding API key for reverse geocoding |
 | **LLM Resilience** | | |
 | `LLM_DEFAULT_TIMEOUT_SECONDS` | LLM Worker | Default timeout for LLM calls (default: 120) |
 | `LLM_MAX_RETRIES` | LLM Worker | Max retry attempts per call (default: 3) |
@@ -877,6 +913,9 @@ ORDER BY next_retry_at;
 | CRM agent tools | `services/commerce-agent/src/commerce_agent/infrastructure/llm/tools/` |
 | Label tools | `services/commerce-agent/src/commerce_agent/infrastructure/llm/tools/label_tools.py` |
 | Midtrans client | `services/commerce-agent/src/commerce_agent/infrastructure/payment/midtrans_client.py` |
+| **Location Extraction** | |
+| Geocoding client | `services/commerce-agent/src/commerce_agent/infrastructure/location/geocoding_client.py` |
+| Location extractor | `services/commerce-agent/src/commerce_agent/infrastructure/location/location_extractor.py` |
 | WA message handler | `services/commerce-agent/src/commerce_agent/application/handlers/wa_message_handler.py` |
 | **Shared** | |
 | Shared settings | `shared/config/settings.py` |

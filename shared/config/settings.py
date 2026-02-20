@@ -78,6 +78,10 @@ class Settings(BaseSettings):
     waha_webhook_secret: str | None = None  # HMAC secret for webhook validation
     waha_session: str = "default"
 
+    # Google Geocoding API (for reverse geocoding WhatsApp locations)
+    google_geocoding_api_key: str | None = None  # Required for reverse geocoding
+    google_geocoding_base_url: str = "https://maps.googleapis.com/maps/api/geocode/json"
+
     # Service-specific
     service_name: str = "unknown"
 
